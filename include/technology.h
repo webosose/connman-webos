@@ -49,6 +49,12 @@ bool connman_technology_get_wifi_tethering(const struct connman_technology *tech
 					const char **ssid, const char **psk, int *freq);
 
 bool connman_technology_is_tethering_allowed(enum connman_service_type type);
+bool connman_technology_get_p2p_listen(struct connman_technology *technology);
+void connman_technology_set_p2p_listen(struct connman_technology *technology,
+							bool enabled);
+unsigned int connman_technology_get_p2p_listen_channel(struct connman_technology *technology);
+void connman_technology_set_p2p_listen_channel(struct connman_technology *technology,
+									unsigned int listen_channel);
 
 struct connman_technology_driver {
 	const char *name;
@@ -65,6 +71,18 @@ struct connman_technology_driver {
 				const char *bridge, bool enabled);
 	int (*set_regdom) (struct connman_technology *technology,
 						const char *alpha2);
+	int (*set_p2p_identifier) (struct connman_technology *technology,
+						const char *p2p_identifier);
+	int (*set_p2p_persistent) (struct connman_technology *technology,
+						bool persistent_reconnect);
+	int (*set_p2p_listen_channel) (struct connman_technology *technology,
+						unsigned int listen_channel);
+	int (*set_p2p_go_intent) (struct connman_technology *technology,
+						unsigned int go_intent);
+	int (*set_p2p_listen) (struct connman_technology *technology,
+						bool enable);
+	int (*set_p2p_listen_params) (struct connman_technology *technology,
+						int period, int interval);
 };
 
 int connman_technology_driver_register(struct connman_technology_driver *driver);
