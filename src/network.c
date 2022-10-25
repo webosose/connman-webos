@@ -55,6 +55,11 @@
 static GSList *network_list = NULL;
 static GSList *driver_list = NULL;
 
+struct connman_bss {
+	short signal;
+	unsigned short frequency;
+	// add other properties needed later
+};
 struct connman_network {
 	int refcount;
 	enum connman_network_type type;
@@ -64,6 +69,7 @@ struct connman_network {
 	uint8_t strength;
 	uint16_t frequency;
 	char *identifier;
+	char *address;
 	char *name;
 	char *node;
 	char *group;
@@ -80,6 +86,7 @@ struct connman_network {
 
 	bool connecting;
 	bool associating;
+	connman_bool_t p2p_network;
 
 	struct connman_device *device;
 
@@ -107,6 +114,7 @@ struct connman_network {
 		bool wps_advertizing;
 		bool use_wps;
 		char *pin_wps;
+		GHashTable *bss;
 	} wifi;
 
 };
@@ -1553,6 +1561,15 @@ int connman_network_set_associating(struct connman_network *network,
 	return 0;
 }
 
+connman_bool_t connman_network_get_p2p_network(struct connman_network *network)
+{
+	return network->p2p_network;
+}
+
+void connman_network_set_p2p_network(struct connman_network *network, connman_bool_t is_p2p_network)
+{
+	network->p2p_network = is_p2p_network;
+}
 static void set_associate_error(struct connman_network *network)
 {
 	struct connman_service *service;
@@ -2048,6 +2065,90 @@ int connman_network_set_domain(struct connman_network *network,
 	__connman_service_set_domainname(service, domain);
 
 	return 0;
+}
+
+int connman_network_set_address(struct connman_network *network,
+                                       const unsigned char *addr_octet, unsigned int size)
+{
+	char *str;
+
+	if (!addr_octet || size != 6)
+		return -EINVAL;
+
+	DBG("");
+	str = g_strdup_printf("%02X:%02X:%02X:%02X:%02X:%02X",
+						addr_octet[0], addr_octet[1], addr_octet[2],
+						addr_octet[3], addr_octet[4], addr_octet[5]);
+	if (!str)
+		return -ENOMEM;
+
+	g_free(network->address);
+	network->address = str;
+
+	return 0;
+}
+
+const char *connman_network_get_address(struct connman_network *network)
+{
+	if (!network)
+		return NULL;
+
+	return network->address;
+}
+
+int connman_network_add_bss(struct connman_network *network,
+                                                       const unsigned char *id,
+                                                       short signal,
+                                                       unsigned short frequency)
+{
+	struct connman_bss *bss;
+	char *str;
+
+	if (!id)
+		return -EINVAL;
+
+	bss = g_try_new0(struct connman_bss, 1);
+	if (!bss)
+		return -ENOMEM;
+
+	str = g_strdup_printf("%02X:%02X:%02X:%02X:%02X:%02X",
+						id[0], id[1], id[2],
+						id[3], id[4], id[5]);
+	if (!str) {
+		g_free(bss);
+		return -ENOMEM;
+	}
+
+	bss->signal = signal;
+	bss->frequency = frequency;
+
+	g_hash_table_replace(network->wifi.bss, str, bss);
+
+	return 0;
+}
+
+GHashTable *connman_network_get_bss_table(struct connman_network *network)
+{
+	if (!network)
+		return NULL;
+
+	return network->wifi.bss;
+}
+
+short connman_network_get_bss_signal(struct connman_bss *bss)
+{
+	if (!bss)
+		return 0;
+
+	return bss->signal;
+}
+
+unsigned short connman_network_get_bss_frequency(struct connman_bss *bss)
+{
+	if (!bss)
+		return 0;
+
+	return bss->frequency;
 }
 
 /**

@@ -58,6 +58,7 @@ static bool services_dirty = false;
 static bool enable_online_to_ready_transition = false;
 static unsigned int online_check_initial_interval = 0;
 static unsigned int online_check_max_interval = 0;
+bool block_auto_connect = FALSE;
 
 struct connman_stats {
 	bool valid;
@@ -7255,6 +7256,11 @@ struct connman_service *__connman_service_lookup_from_index(int index)
 	}
 
 	return NULL;
+}
+
+struct connman_service *__connman_service_lookup_from_ident(const char *identifier)
+{
+	return lookup_by_identifier(identifier);
 }
 
 const char *connman_service_get_identifier(struct connman_service *service)

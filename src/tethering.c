@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <string.h>
@@ -49,8 +50,12 @@
 #endif
 
 #define BRIDGE_NAME "tether"
+#define SUBNET_MASK_24 "255.255.255.0"
 
 #define DEFAULT_MTU	1500
+
+#define CONNMAN_STATION_STR_INFO_LEN 64
+#define CONNMAN_STATION_MAC_INFO_LEN 32
 
 static char *private_network_primary_dns = NULL;
 static char *private_network_secondary_dns = NULL;
@@ -60,6 +65,7 @@ static GDHCPServer *tethering_dhcp_server = NULL;
 static struct connman_ippool *dhcp_ippool = NULL;
 static DBusConnection *connection;
 static GHashTable *pn_hash;
+static GHashTable *sta_hash;
 
 static GHashTable *clients_table;
 
@@ -82,6 +88,75 @@ struct connman_private_network {
 	char *primary_dns;
 	char *secondary_dns;
 };
+int connman_technology_tethering_add_station(enum connman_service_type type,
+                                               const char *mac)
+{
+	const char *str_type;
+	char *lower_mac;
+	char *path;
+	struct connman_station_info *station_info;
+
+	__sync_synchronize();
+
+	DBG("type %d", type);
+
+	str_type = __connman_service_type2string(type);
+	if (str_type == NULL)
+		return 0;
+
+	path = g_strdup_printf("%s/technology/%s", CONNMAN_PATH, str_type);
+
+	station_info = g_try_new0(struct connman_station_info, 1);
+	if(station_info == NULL)
+		return -ENOMEM;
+
+	lower_mac = g_ascii_strdown(mac, -1);
+
+	memcpy(station_info->mac, lower_mac, strlen(lower_mac) + 1);
+	station_info->path = path;
+	station_info->type = g_strdup(str_type);
+
+	g_hash_table_insert(sta_hash, station_info->mac, station_info);
+
+	g_free(lower_mac);
+	return 0;
+}
+int connman_technology_tethering_remove_station(const char *mac)
+{
+	char *lower_mac;
+	struct connman_station_info *info_found;
+
+	__sync_synchronize();
+
+	lower_mac = g_ascii_strdown(mac, -1);
+
+	info_found = g_hash_table_lookup(sta_hash, lower_mac);
+	if (info_found == NULL)
+		return -EACCES;
+
+	g_free(lower_mac);
+	g_hash_table_remove(sta_hash, info_found->mac);
+	g_free(info_found->path);
+	g_free(info_found->type);
+	g_free(info_found);
+
+	return 0;
+}
+int __connman_tethering_sta_count()
+{
+	if (sta_hash != NULL)
+		return g_hash_table_size(sta_hash);
+	else
+		return 0;
+}
+
+GHashTable *__connman_tethering_get_sta_hash()
+{
+	if (sta_hash != NULL)
+		return sta_hash;
+	else
+		return NULL;
+}
 
 const char *__connman_tethering_get_bridge(void)
 {

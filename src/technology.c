@@ -67,6 +67,8 @@ struct connman_technology {
 	char *tethering_ident;
 	char *tethering_passphrase;
 	int tethering_freq;
+	char *tethering_ipaddress;
+	unsigned int tethering_channel;
 
 	int period;
 	int interval;
@@ -84,6 +86,7 @@ struct connman_technology {
 	guint pending_timeout;
 
 	GSList *scan_pending;
+	GSList *iface_prop_pending;
 
 	bool rfkill_driven;
 	bool softblocked;
@@ -95,6 +98,7 @@ static GSList *driver_list = NULL;
 
 static int technology_enabled(struct connman_technology *technology);
 static int technology_disabled(struct connman_technology *technology);
+static int set_p2p_enable(struct connman_technology *technology, bool status);
 
 static gint compare_priority(gconstpointer a, gconstpointer b)
 {
@@ -167,12 +171,14 @@ static const char *get_name(enum connman_service_type type)
 static void technology_save(struct connman_technology *technology)
 {
 	GKeyFile *keyfile;
+	GError *error = NULL;
 	gchar *identifier;
 	const char *name = get_name(technology->type);
 
 	DBG("technology %p type %d name %s", technology, technology->type,
 									name);
-	if (!name)
+
+	if (!name || (technology->type == CONNMAN_SERVICE_TYPE_P2P))
 		return;
 
 	keyfile = __connman_storage_load_global();
@@ -183,8 +189,27 @@ static void technology_save(struct connman_technology *technology)
 	if (!identifier)
 		goto done;
 
-	g_key_file_set_boolean(keyfile, identifier, "Enable",
-				technology->enable_persistent);
+	if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
+			g_key_file_set_boolean(keyfile, "WiFi", "P2PListen",
+						technology->enable_p2p_listen_persistent);
+		goto done;
+	}
+
+	// Update only if a WiFi Enable key is present and new value is ture
+	if (technology->type == CONNMAN_SERVICE_TYPE_WIFI) {
+		g_key_file_get_boolean(keyfile, identifier, "Enable", &error);
+		if (error == NULL) {
+			g_key_file_set_boolean(keyfile, identifier, "Enable",
+						technology->enable_persistent);
+		} else if (error && technology->enable_persistent) {
+			g_key_file_set_boolean(keyfile, identifier, "Enable",
+						technology->enable_persistent);
+			g_clear_error(&error);
+		}
+	} else {
+		g_key_file_set_boolean(keyfile, identifier, "Enable",
+					technology->enable_persistent);
+	}
 
 	g_key_file_set_boolean(keyfile, identifier, "Tethering",
 				technology->tethering_persistent);
@@ -201,12 +226,15 @@ static void technology_save(struct connman_technology *technology)
 		g_free(enc);
 	}
 
-	if (technology->tethering_freq == 0)
-		technology->tethering_freq = 2412;
+	if (technology->tethering_channel)
+		g_key_file_set_integer(keyfile, identifier,
+					"Tethering.Channel",
+					technology->tethering_channel);
 
-	g_key_file_set_integer(keyfile, identifier,
-				"Tethering.Freq",
-				technology->tethering_freq);
+	if (technology->tethering_ipaddress)
+		g_key_file_set_string(keyfile, identifier,
+					"Tethering.IP",
+					technology->tethering_ipaddress);
 
 done:
 	g_free(identifier);
@@ -421,11 +449,15 @@ static void technology_load(struct connman_technology *technology)
 	keyfile = __connman_storage_load_global();
 	/* Fallback on disabling technology if file not found. */
 	if (!keyfile) {
-		if (technology->type == CONNMAN_SERVICE_TYPE_ETHERNET)
+		if (technology->type == CONNMAN_SERVICE_TYPE_ETHERNET || technology->type == CONNMAN_SERVICE_TYPE_WIFI)
 			/* We enable ethernet by default */
 			technology->enable_persistent = true;
 		else
 			technology->enable_persistent = false;
+
+		if (technology->type == CONNMAN_SERVICE_TYPE_P2P)
+			technology->enable_p2p_listen_persistent = true;
+
 		return;
 	}
 
@@ -444,6 +476,15 @@ static void technology_load(struct connman_technology *technology)
 
 		need_saving = true;
 		g_clear_error(&error);
+			if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
+				enable = g_key_file_get_boolean(keyfile, "WiFi", "P2PListen", &error);
+				if (!error)
+					technology->enable_p2p_listen_persistent = enable;
+				else {
+					technology->enable_p2p_listen_persistent = true;
+					g_clear_error(&error);
+				}
+			}
 	}
 
 	enable = g_key_file_get_boolean(keyfile, identifier,
@@ -466,9 +507,11 @@ static void technology_load(struct connman_technology *technology)
 	if (enc)
 		technology->tethering_passphrase = g_strcompress(enc);
 
-	technology->tethering_freq = g_key_file_get_integer(keyfile,
-				identifier, "Tethering.Freq", NULL);
+	technology->tethering_channel = g_key_file_get_integer(keyfile,
+				identifier, "Tethering.Channel", NULL);
 
+	technology->tethering_ipaddress = g_key_file_get_string(keyfile,
+				identifier, "Tethering.IP", NULL);
 done:
 	g_free(identifier);
 
@@ -535,6 +578,48 @@ static bool connman_technology_load_offlinemode(void)
 	return offlinemode;
 }
 
+static void append_interfaces(DBusMessageIter *iter, void *user_data)
+{
+	struct connman_technology *technology = user_data;
+	GSList *list;
+
+	for (list = technology->device_list; list; list = list->next) {
+		struct connman_device *device = list->data;
+		const char *iface = connman_device_get_interface(device);
+
+		dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &iface);
+	}
+}
+
+static void interface_changed(struct connman_technology *technology)
+{
+	DBG("interface_changed for path  %s", technology->path);
+	connman_dbus_property_changed_array(technology->path,
+						CONNMAN_TECHNOLOGY_INTERFACE,
+						"Interfaces",
+						DBUS_TYPE_STRING,
+						append_interfaces, technology);
+}
+
+void connman_technology_interface_changed(struct connman_technology *technology)
+{
+	interface_changed(technology);
+}
+
+static void append_p2plistenparams(DBusMessageIter *iter, void *user_data)
+{
+	struct connman_technology *technology = user_data;
+
+	if (!technology)
+		return;
+
+	connman_dbus_dict_append_basic(iter, "Period",
+					DBUS_TYPE_INT32, &technology->period);
+
+	connman_dbus_dict_append_basic(iter, "Interval",
+					DBUS_TYPE_INT32, &technology->interval);
+}
+
 static void append_properties(DBusMessageIter *iter,
 		struct connman_technology *technology)
 {
@@ -570,6 +655,11 @@ static void append_properties(DBusMessageIter *iter,
 					DBUS_TYPE_BOOLEAN,
 					&val);
 
+	connman_dbus_dict_append_array(&dict, "Interfaces",
+					DBUS_TYPE_STRING,
+					append_interfaces,
+					technology);
+
 	if (technology->tethering_ident)
 		connman_dbus_dict_append_basic(&dict, "TetheringIdentifier",
 					DBUS_TYPE_STRING,
@@ -583,6 +673,28 @@ static void append_properties(DBusMessageIter *iter,
 	connman_dbus_dict_append_basic(&dict, "TetheringFreq",
 				DBUS_TYPE_INT32,
 				&technology->tethering_freq);
+
+	if(technology->p2p_identifier)
+		connman_dbus_dict_append_basic(&dict, "P2PIdentifier",
+					DBUS_TYPE_STRING,
+					&technology->p2p_identifier);
+
+	val = technology->p2p_persistent;
+	connman_dbus_dict_append_basic(&dict, "P2PPersistent",
+					DBUS_TYPE_BOOLEAN,
+					&val);
+
+	connman_dbus_dict_append_dict(&dict, "P2PListenParams",
+					append_p2plistenparams, technology);
+
+	connman_dbus_dict_append_basic(&dict, "P2PListenChannel",
+					DBUS_TYPE_UINT32,
+					&technology->p2p_listen_channel);
+
+	val = technology->p2p_listen;
+	connman_dbus_dict_append_basic(&dict, "P2PListen",
+					DBUS_TYPE_BOOLEAN,
+					&val);
 
 	connman_dbus_dict_close(iter, &dict);
 }
@@ -745,16 +857,23 @@ static int technology_enabled(struct connman_technology *technology)
 	if (technology->enabled)
 		return -EALREADY;
 
-	technology->enabled = true;
-
+	struct connman_technology *p2p;
 	if (technology->type == CONNMAN_SERVICE_TYPE_WIFI) {
-		struct connman_technology *p2p;
-
+		
 		p2p = technology_find(CONNMAN_SERVICE_TYPE_P2P);
-		if (p2p && !p2p->enabled && p2p->enable_persistent)
+		if (p2p && !p2p->enabled && p2p->enable_persistent){
 			technology_enabled(p2p);
+		}
 	}
 
+	if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
+		p2p = technology_find(CONNMAN_SERVICE_TYPE_P2P);
+		if (p2p){
+			(void)set_p2p_enable(p2p,true);
+		}
+	}
+
+	technology->enabled = true;
 	if (technology->tethering_persistent)
 		enable_tethering(technology);
 
@@ -808,6 +927,10 @@ static int technology_disabled(struct connman_technology *technology)
 	if (!technology->enabled)
 		return -EALREADY;
 
+	if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
+		(void)set_p2p_enable(technology,false);
+	}
+
 	technology->enabled = false;
 
 	powered_changed(technology);
@@ -826,7 +949,7 @@ static int technology_disable(struct connman_technology *technology)
 	if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
 		technology->enable_persistent = false;
 		__connman_device_stop_scan(CONNMAN_SERVICE_TYPE_P2P);
-		__connman_peer_disconnect_all();
+		//__connman_peer_disconnect_all();
 		return technology_disabled(technology);
 	} else if (technology->type == CONNMAN_SERVICE_TYPE_WIFI) {
 		struct connman_technology *p2p;
@@ -853,6 +976,51 @@ static int technology_disable(struct connman_technology *technology)
 		err = __connman_rfkill_block(technology->type, true);
 
 	return err;
+}
+
+static int remove_persistent_info(struct connman_technology *technology,
+													const char *identifier)
+{
+	int result = -EOPNOTSUPP;
+	GSList *tech_drivers;
+
+	__sync_synchronize();
+	if (technology->enabled == FALSE)
+		return -EACCES;
+
+	for (tech_drivers = technology->driver_list; tech_drivers != NULL;
+		tech_drivers = g_slist_next(tech_drivers)) {
+		struct connman_technology_driver *driver = tech_drivers->data;
+
+		if (driver == NULL || driver->remove_persistent_info == NULL)
+			continue;
+
+		result = driver->remove_persistent_info(technology, identifier);
+	}
+
+	return result;
+}
+
+static int remove_persistent_info_all(struct connman_technology *technology)
+{
+	int result = -EOPNOTSUPP;
+	GSList *tech_drivers;
+
+	__sync_synchronize();
+	if (technology->enabled == FALSE)
+		return -EACCES;
+
+	for (tech_drivers = technology->driver_list; tech_drivers != NULL;
+		tech_drivers = g_slist_next(tech_drivers)) {
+		struct connman_technology_driver *driver = tech_drivers->data;
+
+		if (driver == NULL || driver->remove_persistent_info_all == NULL)
+			continue;
+
+		result = driver->remove_persistent_info_all(technology);
+	}
+
+	return result;
 }
 
 static DBusMessage *set_powered(struct connman_technology *technology,
@@ -893,6 +1061,10 @@ make_reply:
 
 	return reply;
 }
+bool connman_technology_get_enable_p2p_listen(struct connman_technology *technology)
+{
+	return technology->enable_p2p_listen_persistent;
+}
 bool connman_technology_get_p2p_listen(struct connman_technology *technology)
 {
 	return technology->p2p_listen;
@@ -914,6 +1086,17 @@ void connman_technology_set_p2p_listen(struct connman_technology *technology, bo
 			DBUS_TYPE_BOOLEAN,
 			&listen_enabled);
 }
+
+void __connman_technology_p2p_invitation_result(struct connman_technology *technology, int status)
+{
+	if(technology->type != CONNMAN_SERVICE_TYPE_P2P)
+		return;
+
+	connman_dbus_property_changed_basic(technology->path,
+			CONNMAN_TECHNOLOGY_INTERFACE, "P2PInvitationResult",
+			DBUS_TYPE_INT32, &status);
+}
+
 static DBusMessage *set_p2p_listen(struct connman_technology *technology,
 				DBusMessage *msg, bool enable)
 {
@@ -993,6 +1176,43 @@ void connman_technology_set_p2p_listen_channel(struct connman_technology *techno
 				&technology->p2p_listen_channel);
 	}
 }
+
+bool connman_technology_get_p2p_persistent(struct connman_technology *technology)
+{
+	return technology->p2p_persistent;
+}
+
+void connman_technology_set_p2p_persistent(struct connman_technology *technology, bool enabled)
+{
+	GSList *tech_drivers;
+	int err = 0;
+	dbus_bool_t persistent_enabled;
+
+	if (technology->p2p_persistent == enabled)
+		return;
+
+	technology->p2p_persistent = enabled;
+
+	for (tech_drivers = technology->driver_list; tech_drivers != NULL;
+		tech_drivers = g_slist_next(tech_drivers)) {
+		struct connman_technology_driver *driver = tech_drivers->data;
+
+		if (!driver || !driver->set_p2p_persistent)
+			continue;
+
+		err = driver->set_p2p_persistent(technology, enabled);
+		if (err < 0)
+			connman_error("Failed to set P2P persistent state");
+	}
+
+	persistent_enabled = technology->p2p_persistent;
+	connman_dbus_property_changed_basic(technology->path,
+			CONNMAN_TECHNOLOGY_INTERFACE,
+			"P2PPersistent",
+			DBUS_TYPE_BOOLEAN,
+			&persistent_enabled);
+}
+
 static DBusMessage *set_p2p_persistent(struct connman_technology *technology,
 													DBusMessage *msg, bool enabled)
 {
@@ -1038,6 +1258,27 @@ make_reply:
 
 	return reply;
 }
+
+void connman_technology_set_p2p_identifier(struct connman_technology *technology, const char *p2p_identifier)
+{
+
+	if (technology->p2p_identifier) {
+		g_free(technology->p2p_identifier);
+		technology->p2p_identifier = NULL;
+	}
+
+	if(p2p_identifier == NULL)
+		return;
+
+	technology->p2p_identifier = g_strdup(p2p_identifier);
+
+	connman_dbus_property_changed_basic(technology->path,
+			CONNMAN_TECHNOLOGY_INTERFACE,
+			"P2PIdentifier",
+			DBUS_TYPE_STRING,
+			&technology->p2p_identifier);
+}
+
 static int set_p2p_identifier(struct connman_technology *technology,
 											const char *p2p_identifier)
 {
@@ -1210,6 +1451,62 @@ make_reply:
 		reply = g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 
 	return reply;
+}
+
+static int set_p2p_enable(struct connman_technology *technology,
+				 bool status)
+{
+	int err = 0;
+	GSList *tech_drivers = NULL;
+
+	__sync_synchronize();
+	if (technology->type != CONNMAN_SERVICE_TYPE_P2P) {
+		return -EOPNOTSUPP;
+	}
+
+
+	for (tech_drivers = technology->driver_list; tech_drivers != NULL;
+			tech_drivers = g_slist_next(tech_drivers)) {
+		struct connman_technology_driver *driver = tech_drivers->data;
+
+		if (!driver || !driver->set_p2p_enable)
+			continue;
+
+		err = driver->set_p2p_enable(technology, status);
+		return err;
+	}
+
+	return err;
+}
+
+void connman_technology_set_p2p(struct connman_technology *technology, bool enabled)
+{
+	dbus_bool_t p2p_enabled;
+	DBG("Set p2p enable..enter");
+
+	if (!technology) {
+		DBG("Set p2p enable..tech null");
+		return;
+	}
+
+	if (enabled == technology->enabled)
+		return;
+
+	technology->enabled = enabled;
+	p2p_enabled = enabled;
+
+	powered_changed(technology);
+
+	connman_dbus_property_changed_basic(technology->path,
+		CONNMAN_TECHNOLOGY_INTERFACE,
+		"P2P",
+		DBUS_TYPE_BOOLEAN,
+		&p2p_enabled);
+}
+
+bool is_technology_enabled(struct connman_technology *technology)
+{
+	return technology == NULL ? false : technology->enabled;
 }
 
 static DBusMessage *set_property(DBusConnection *conn,
@@ -1414,6 +1711,24 @@ static DBusMessage *set_property(DBusConnection *conn,
 		dbus_message_iter_get_basic(&value, &enable);
 
 		return set_powered(technology, msg, enable);
+	}	else if (g_str_equal(name, "RemovePersistentInfo") == TRUE) {
+		const char *identifier;
+		int res;
+
+		dbus_message_iter_get_basic(&value, &identifier);
+
+		if (technology->type != CONNMAN_SERVICE_TYPE_P2P)
+			return __connman_error_not_supported(msg);
+
+		if (!strncmp(identifier, "all", 3))
+			res = remove_persistent_info_all(technology);
+		else if (strlen(identifier) != 17)
+			return __connman_error_invalid_arguments(msg);
+		else
+			res = remove_persistent_info(technology, identifier);
+
+		if (res < 0)
+			return __connman_error_failed(msg, -res);
 	} else
 		return __connman_error_invalid_property(msg);
 
@@ -1513,6 +1828,46 @@ void __connman_technology_notify_regdom_by_device(struct connman_device *device,
 	connman_technology_regdom_notify(technology, alpha2);
 }
 
+int __connman_technology_set_p2p_go(DBusMessage *msg, const char *ident, const char *passphrase)
+{
+	struct connman_technology *technology;
+	GSList *tech_drivers;
+	int result = 0;
+	int err;
+
+	technology = technology_find(CONNMAN_SERVICE_TYPE_P2P);
+
+	DBG("technology %p", technology);
+
+	if (!technology)
+		return -EINVAL;
+
+	if (strlen(ident) < 1 || strlen(passphrase) < 1){
+		ident = NULL;
+		passphrase = NULL;
+	}
+
+	for (tech_drivers = technology->driver_list; tech_drivers;
+			tech_drivers = g_slist_next(tech_drivers)) {
+		struct connman_technology_driver *driver = tech_drivers->data;
+
+		if (!driver || !driver->set_p2p_go)
+			continue;
+
+		err = driver->set_p2p_go(msg, technology, ident, passphrase);
+
+		if (result == -EINPROGRESS)
+			continue;
+
+		if (err == -EINPROGRESS || err == 0) {
+			result = err;
+			continue;
+		}
+	}
+
+	return 0;
+}
+
 static DBusMessage *scan(DBusConnection *conn, DBusMessage *msg, void *data)
 {
 	struct connman_technology *technology = data;
@@ -1535,7 +1890,112 @@ static DBusMessage *scan(DBusConnection *conn, DBusMessage *msg, void *data)
 
 	return NULL;
 }
+void connman_technology_wps_failed_notify(struct connman_technology *technology)
+{
+	g_dbus_emit_signal(connection, technology->path,
+		CONNMAN_TECHNOLOGY_INTERFACE, "WPSFailed",
+		DBUS_TYPE_INVALID);
+}
+static DBusMessage *cancel_p2p(DBusConnection *conn, DBusMessage *msg, void *data)
+{
+	struct connman_technology *technology = data;
+	int err;
 
+	if (technology->type != CONNMAN_SERVICE_TYPE_P2P &&
+				!technology->enabled)
+		return __connman_error_failed(msg, EOPNOTSUPP);
+
+	err = __connman_device_request_cancel_p2p(technology->type);
+	if (err < 0)
+		return __connman_error_failed(msg, -err);
+
+	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
+}
+
+static void reply_interface_properties(struct connman_device *device, void *user_data)
+{
+	DBusMessage *msg = user_data;
+	DBusMessage *reply;
+	DBusMessageIter iter, dict;
+
+	reply = dbus_message_new_method_return(msg);
+	if (!reply) {
+		reply = __connman_error_failed(msg, ENOMEM);
+		g_dbus_send_message(connection, reply);
+		dbus_message_unref(msg);
+		return;
+	}
+
+	dbus_message_iter_init_append(reply, &iter);
+
+	connman_dbus_dict_open(&iter, &dict);
+
+	if (connman_device_get_type(device) == CONNMAN_DEVICE_TYPE_WIFI) {
+		uint32_t value = 0;
+
+		value = connman_device_get_integer(device, "WiFi.RSSI");
+		connman_dbus_dict_append_basic(&dict, "WiFi.RSSI",
+								DBUS_TYPE_UINT32, &value);
+
+		value = connman_device_get_integer(device, "WiFi.LinkSpeed");
+		connman_dbus_dict_append_basic(&dict, "WiFi.LinkSpeed",
+								DBUS_TYPE_UINT32, &value);
+
+		value = connman_device_get_integer(device, "WiFi.Frequency");
+		connman_dbus_dict_append_basic(&dict, "WiFi.Frequency",
+								DBUS_TYPE_UINT32, &value);
+
+		value = connman_device_get_integer(device, "WiFi.Noise");
+		connman_dbus_dict_append_basic(&dict, "WiFi.Noise",
+								DBUS_TYPE_UINT32, &value);
+	}
+
+	connman_dbus_dict_close(&iter, &dict);
+
+	g_dbus_send_message(connection, reply);
+
+	dbus_message_unref(msg);
+}
+static DBusMessage *get_interface_properties(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
+{
+	struct connman_technology *technology = user_data;
+	DBusMessageIter iter;
+	GSList *list;
+	char *interface = NULL;
+
+	if (!dbus_message_iter_init(msg, &iter))
+		return __connman_error_invalid_arguments(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+		return __connman_error_invalid_arguments(msg);
+
+	dbus_message_iter_get_basic(&iter, &interface);
+
+	if (!interface)
+		return __connman_error_invalid_arguments(msg);
+
+	struct connman_device *device = NULL;
+
+	for (list = technology->device_list; list; list = list->next) {
+		struct connman_device *current_device = list->data;
+		const char *iface = connman_device_get_interface(current_device);
+
+		if (g_strcmp0(iface, interface) == 0) {
+			device = current_device;
+			break;
+		}
+	}
+
+	if (!device)
+		return __connman_error_invalid_arguments(msg);
+
+	dbus_message_ref(msg);
+
+	connman_device_request_signal_info(device, reply_interface_properties, msg);
+
+	return NULL;
+}
 static const GDBusMethodTable technology_methods[] = {
 	{ GDBUS_DEPRECATED_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
@@ -1544,6 +2004,11 @@ static const GDBusMethodTable technology_methods[] = {
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" }),
 			NULL, set_property) },
 	{ GDBUS_ASYNC_METHOD("Scan", NULL, NULL, scan) },
+	{ GDBUS_METHOD("CancelP2P", NULL, NULL, cancel_p2p) },
+	{ GDBUS_ASYNC_METHOD("GetInterfaceProperties",
+			GDBUS_ARGS({ "interface", "s" }),
+			GDBUS_ARGS({ "properties", "a{sv}"}),
+			get_interface_properties) },
 	{ },
 };
 
@@ -1625,6 +2090,7 @@ static void technology_put(struct connman_technology *technology)
 	g_free(technology->regdom);
 	g_free(technology->tethering_ident);
 	g_free(technology->tethering_passphrase);
+	g_free(technology->p2p_identifier);
 	g_free(technology);
 }
 
@@ -1866,8 +2332,8 @@ void __connman_technology_remove_interface(enum connman_service_type type,
 	}
 
 	name = connman_inet_ifname(index);
-	connman_info("Remove interface %s [ %s ]", name,
-				__connman_service_type2string(type));
+	connman_info("Remove interface %s [ %s ] index %d", name,
+				__connman_service_type2string(type), index);
 	g_free(name);
 
 	technology = technology_find(type);
@@ -1932,7 +2398,13 @@ int __connman_technology_add_device(struct connman_device *device)
 		__connman_device_disable(device);
 
 done:
-	technology->device_list = g_slist_prepend(technology->device_list,
+	if (connman_setting_get_bool("SupportP2P0Interface") == TRUE &&
+					g_strcmp0(connman_device_get_string(device, "Interface"),
+						connman_option_get_string("WiFiDevice")) == 0)
+		technology->device_list = g_slist_append(technology->device_list,
+								device);
+	else
+		technology->device_list = g_slist_prepend(technology->device_list,
 								device);
 
 	return 0;
@@ -2299,4 +2771,43 @@ void __connman_technology_cleanup(void)
 	g_hash_table_destroy(rfkill_list);
 
 	dbus_connection_unref(connection);
+}
+
+static void append_station_mac(DBusMessageIter *iter, void *user_data)
+{
+	GHashTable *sta_hash = __connman_tethering_get_sta_hash();
+
+	if (sta_hash == NULL)
+		return;
+
+	GHashTableIter iterator;
+	gpointer key, value;
+	g_hash_table_iter_init (&iterator, sta_hash);
+
+	struct connman_station_info *info_found;
+
+	while (g_hash_table_iter_next (&iterator, &key, &value))
+	{
+		info_found = value;
+		const char* temp = info_found->mac;
+		dbus_message_iter_append_basic(iter,
+						DBUS_TYPE_STRING, &temp);
+	}
+}
+
+void __connman_technology_sta_count_changed(enum connman_service_type type, int stacount)
+{
+	struct connman_technology *technology;
+
+	technology = technology_find(type);
+	if (technology == NULL)
+		return;
+
+	connman_dbus_property_changed_basic(technology->path,
+					CONNMAN_TECHNOLOGY_INTERFACE, "StaCount",
+					DBUS_TYPE_INT32, &stacount);
+
+	connman_dbus_property_changed_array(technology->path,
+					CONNMAN_TECHNOLOGY_INTERFACE, "StationMac",
+					DBUS_TYPE_STRING, append_station_mac, NULL);
 }

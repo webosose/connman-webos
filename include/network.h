@@ -29,6 +29,8 @@
 
 #include <connman/device.h>
 #include <connman/ipconfig.h>
+#include <glib.h>
+#include <connman/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,6 +66,7 @@ enum connman_network_error {
 #define CONNMAN_NETWORK_PRIORITY_DEFAULT     0
 #define CONNMAN_NETWORK_PRIORITY_HIGH      100
 
+struct connman_bss;
 struct connman_network;
 
 struct connman_network *connman_network_create(const char *identifier,
@@ -121,6 +124,17 @@ int connman_network_set_nameservers(struct connman_network *network,
 				const char *nameservers);
 int connman_network_set_domain(struct connman_network *network,
 			             const char *domain);
+int connman_network_set_address(struct connman_network *network,
+                                const unsigned char *addr_octet, unsigned int size);
+const char *connman_network_get_address(struct connman_network *network);
+int connman_network_add_bss(struct connman_network *network,
+                            const unsigned char *id,
+                            short signal,
+                            unsigned short frequency);
+GHashTable *connman_network_get_bss_table(struct connman_network *network);
+short connman_network_get_bss_signal(struct connman_bss *bss);
+unsigned short connman_network_get_bss_frequency(struct connman_bss *bss);
+
 int connman_network_set_name(struct connman_network *network,
 							const char *name);
 int connman_network_set_strength(struct connman_network *network,
@@ -147,6 +161,8 @@ int connman_network_set_blob(struct connman_network *network,
 			const char *key, const void *data, unsigned int size);
 const void *connman_network_get_blob(struct connman_network *network,
 					const char *key, unsigned int *size);
+connman_bool_t connman_network_get_p2p_network(struct connman_network *network);
+void connman_network_set_p2p_network(struct connman_network *network, connman_bool_t is_p2p_network);
 
 struct connman_device *connman_network_get_device(struct connman_network *network);
 

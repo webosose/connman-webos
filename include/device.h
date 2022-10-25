@@ -83,6 +83,7 @@ void connman_device_set_index(struct connman_device *device, int index);
 int connman_device_get_index(struct connman_device *device);
 void connman_device_set_interface(struct connman_device *device,
 						const char *interface);
+const char *connman_device_get_interface(struct connman_device *device);
 
 void connman_device_set_ident(struct connman_device *device,
 						const char *ident);
@@ -100,6 +101,11 @@ void connman_device_reset_scanning(struct connman_device *device);
 int connman_device_set_string(struct connman_device *device,
 					const char *key, const char *value);
 const char *connman_device_get_string(struct connman_device *device,
+							const char *key);
+
+int connman_device_set_integer(struct connman_device *device,
+							const char *key, int value);
+int connman_device_get_integer(struct connman_device *device,
 							const char *key);
 
 int connman_device_add_network(struct connman_device *device,
@@ -123,6 +129,14 @@ struct connman_device *connman_device_create_from_index(int index);
 struct connman_device *connman_device_find_by_index(int index);
 int connman_device_reconnect_service(struct connman_device *device);
 
+int connman_device_set_integer(struct connman_device *device,
+										const char *key, int value);
+int connman_device_get_integer(struct connman_device *device,
+										const char *key);
+typedef void (*connman_device_request_signal_info_cb)(struct connman_device *device, void *user_data);
+int connman_device_request_signal_info(struct connman_device *device,
+										connman_device_request_signal_info_cb cb, void *user_data);
+
 struct connman_device_driver {
 	const char *name;
 	enum connman_device_type type;
@@ -137,6 +151,11 @@ struct connman_device_driver {
 			struct connman_device *device);
 	int (*set_regdom) (struct connman_device *device,
 						const char *alpha2);
+	int (*start_wps) (struct connman_device *device, const char *pin);
+	int (*cancel_wps) (struct connman_device *device);
+	int (*cancel_p2p) (struct connman_device *device);
+	int (*get_driver_info) (struct connman_device *device);
+	int (*get_signal_info)(struct connman_device *device, connman_device_request_signal_info_cb cb, void *user_data);
 };
 
 int connman_device_driver_register(struct connman_device_driver *driver);

@@ -30,6 +30,7 @@
 #include <connman/agent.h>
 
 #include "connman.h"
+#include "include/group.h"
 
 static bool connman_state_idle;
 static dbus_bool_t sessionmode;

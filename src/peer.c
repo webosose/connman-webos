@@ -33,12 +33,16 @@
 
 #include "connman.h"
 
+#define P2P_DEFAULT_BLOCK 0xc0a83100 //192.168.49.
+
+
 static DBusConnection *connection = NULL;
 
 static GHashTable *peers_table = NULL;
 
 static struct connman_peer_driver *peer_driver;
 
+typedef void (*GdhcpaddressclientCb) ();
 struct _peers_notify {
 	int id;
 	GHashTable *add;
@@ -64,10 +68,35 @@ struct connman_peer {
 	DBusMessage *pending;
 	bool registered;
 	bool connection_master;
+	bool is_groupOwner;
 	struct connman_ippool *ip_pool;
 	GDHCPServer *dhcp_server;
 	uint32_t lease_ip;
 	GSList *services;
+
+	const char *type;
+	const char *device_address;
+	unsigned char strength;
+	dbus_uint16_t config_methods;
+
+	char *static_ip;
+	char *dhcp_ip;
+	bool is_static_ip;
+	bool is_dhcp_ip;
+	char* pri_dev_type;
+	bool is_autonomous_group;
+	GdhcpaddressclientCb clientCb;
+};
+
+struct connman_peerrequest {
+	struct connman_peer *peer;
+	int dev_passwd_id;
+};
+
+struct connman_peer_invitation {
+	const char * peer_path;
+	const char * signal;
+	const char * go_dev_addr;
 };
 
 static void settings_changed(struct connman_peer *peer);
@@ -251,6 +280,28 @@ static const char *state2string(enum connman_peer_state state)
 
 	return NULL;
 }
+
+
+ const char *connman_peer_wps_method2string(enum connman_peer_wps_method method)
+{
+	switch (method) {
+	case CONNMAN_PEER_WPS_UNKNOWN:
+		break;
+	case CONNMAN_PEER_WPS_PBC:
+		return "pbc";
+	case CONNMAN_PEER_WPS_PIN:
+		return "pin";
+	case CONNMAN_PEER_WPS_DISPLAY:
+		return "display";
+	case CONNMAN_PEER_WPS_KEYBOARD:
+		return "keypad";
+	case CONNMAN_PEER_WPS_P2PS:
+		return "p2ps";
+	}
+
+	return NULL;
+}
+
 
 static bool is_connecting(struct connman_peer *peer)
 {
@@ -644,6 +695,28 @@ static int peer_disconnect(struct connman_peer *peer)
 	return err;
 }
 
+static int peer_reject(struct connman_peer *peer)
+{
+	int err = -ENOTSUP;
+
+	connman_agent_cancel(peer);
+	reply_pending(peer, ECONNABORTED);
+
+	connman_peer_set_state(peer, CONNMAN_PEER_STATE_DISCONNECT);
+
+	if (peer->connection_master)
+		stop_dhcp_server(peer);
+	else
+		__connman_dhcp_stop(peer->ipconfig);
+
+	if (peer_driver->reject)
+		err = peer_driver->reject(peer);
+
+	connman_peer_set_state(peer, CONNMAN_PEER_STATE_IDLE);
+
+	return err;
+}
+
 static DBusMessage *connect_peer(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -705,6 +778,21 @@ static DBusMessage *disconnect_peer(DBusConnection *conn,
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 }
 
+static DBusMessage *reject_peer(DBusConnection *conn,
+					DBusMessage *msg, void *user_data)
+{
+	struct connman_peer *peer = user_data;
+	int err;
+
+	DBG("peer %p", peer);
+
+	err = peer_reject(peer);
+	if (err < 0 && err != -EINPROGRESS)
+		return __connman_error_failed(msg, -err);
+
+	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
+}
+
 struct connman_peer *connman_peer_create(const char *identifier)
 {
 	struct connman_peer *peer;
@@ -714,6 +802,17 @@ struct connman_peer *connman_peer_create(const char *identifier)
 	peer->state = CONNMAN_PEER_STATE_IDLE;
 
 	peer->refcount = 1;
+	peer->type = "peer";
+	peer->device_address = __connman_util_insert_colon_to_mac_addr(identifier);
+	peer->is_static_ip = false;
+	peer->is_dhcp_ip = false;
+	peer->is_groupOwner = false;
+	peer->static_ip = NULL;
+	peer->dhcp_ip = g_strdup("");
+	peer->config_methods = 0;
+	peer->pri_dev_type = NULL;
+	peer->is_autonomous_group = false;
+	peer->clientCb = NULL;
 
 	return peer;
 }
@@ -754,8 +853,19 @@ const char *connman_peer_get_identifier(struct connman_peer *peer)
 
 void connman_peer_set_name(struct connman_peer *peer, const char *name)
 {
+	if (!peer || !name)
+		return;
+
 	g_free(peer->name);
-	peer->name = g_strdup(name);
+	peer->name = g_strdup(strlen(name) ? name : " ");
+}
+
+void connman_peer_dhcpclient_cb(struct connman_peer *peer,GdhcpaddressclientCb callback)
+{
+	if (!peer)
+		return;
+
+	peer->clientCb = callback;
 }
 
 void connman_peer_set_iface_address(struct connman_peer *peer,
@@ -773,6 +883,54 @@ void connman_peer_set_device(struct connman_peer *peer,
 
 	peer->device = device;
 	connman_device_ref(device);
+}
+void connman_peer_set_strength(struct connman_peer *peer,
+				unsigned char strength)
+{
+	if (!peer)
+		return;
+
+	peer->strength = strength;
+}
+
+void connman_peer_set_config_methods(struct connman_peer *peer,
+				dbus_uint16_t config_methods)
+{
+	if (!peer)
+		return;
+
+	peer->config_methods = config_methods;
+}
+
+void connman_peer_set_pri_dev_type(struct connman_peer *peer,
+				const char* pri_dev_type)
+{
+	if (!peer)
+		return;
+
+	peer->pri_dev_type = pri_dev_type;
+}
+
+int connman_peer_set_ipaddress(struct connman_peer *peer,
+				const char *address, const char *netmask, const char *gateway)
+{
+	if (!peer)
+		return -EINVAL;
+
+	DBG("");
+
+	__connman_ipconfig_set_method(peer->ipconfig, CONNMAN_IPCONFIG_METHOD_MANUAL);
+	__connman_ipconfig_set_local(peer->ipconfig, address);
+
+	unsigned char prefixlen = connman_ipaddress_calc_netmask_len(netmask);
+	if (prefixlen == 255)
+		connman_warn("netmask: %s is invalid", netmask);
+
+	__connman_ipconfig_set_prefixlen(peer->ipconfig, prefixlen);
+	__connman_ipconfig_set_gateway(peer->ipconfig, gateway);
+	__connman_ipconfig_set_dhcp_address(peer->ipconfig, address);
+
+	return 0;
 }
 
 struct connman_device *connman_peer_get_device(struct connman_peer *peer)
@@ -800,12 +958,21 @@ void connman_peer_set_as_master(struct connman_peer *peer, bool master)
 	peer->connection_master = master;
 }
 
+void connman_peer_set_as_go(struct connman_peer *peer, bool go)
+{
+	if (!peer || !is_connecting(peer))
+		return;
+
+	peer->is_groupOwner = go;
+}
+
 static void dhcp_callback(struct connman_ipconfig *ipconfig,
 			struct connman_network *network,
 			bool success, gpointer data)
 {
 	struct connman_peer *peer = data;
 	int err;
+	const char *identifier = connman_peer_get_identifier(peer);
 
 	if (!success)
 		goto error;
@@ -831,7 +998,21 @@ static int start_dhcp_client(struct connman_peer *peer)
 
 	__connman_ipconfig_enable(peer->ipconfig);
 
-	return __connman_dhcp_start(peer->ipconfig, NULL, dhcp_callback, peer);
+	if (peer->is_static_ip) {
+		dhcp_callback(peer->ipconfig, NULL, true, peer);
+		return 0;
+	} else {
+		return __connman_dhcp_start(peer->ipconfig, NULL, dhcp_callback, peer);
+	}
+}
+
+static void stop_dhcp_client(struct connman_peer *peer)
+{
+	if (peer->is_static_ip) {
+		__connman_ipconfig_set_method(peer->ipconfig, CONNMAN_IPCONFIG_METHOD_DHCP);
+		__connman_ipconfig_address_remove(peer->ipconfig);
+	} else
+		__connman_dhcp_stop(peer->ipconfig);
 }
 
 static void report_error_cb(void *user_context, bool retry, void *user_data)
@@ -875,6 +1056,14 @@ static int manage_peer_error(struct connman_peer *peer)
 	return 0;
 }
 
+enum connman_peer_state connman_peer_get_state(struct connman_peer *peer)
+{
+	if (!peer)
+		return CONNMAN_PEER_STATE_UNKNOWN;
+
+	return peer->state;
+}
+
 int connman_peer_set_state(struct connman_peer *peer,
 					enum connman_peer_state new_state)
 {
@@ -898,8 +1087,12 @@ int connman_peer_set_state(struct connman_peer *peer,
 	case CONNMAN_PEER_STATE_ASSOCIATION:
 		break;
 	case CONNMAN_PEER_STATE_CONFIGURATION:
-		if (peer->connection_master)
+		if (peer->connection_master) {
+
 			err = start_dhcp_server(peer);
+			if (err >= 0 && !peer->is_autonomous_group)
+				__connman_p2p_set_dhcp_pool(peer->ip_pool);
+		}
 		else
 			err = start_dhcp_client(peer);
 		if (err < 0)
@@ -911,17 +1104,30 @@ int connman_peer_set_state(struct connman_peer *peer,
 		__connman_technology_set_connected(CONNMAN_SERVICE_TYPE_P2P, true);
 		break;
 	case CONNMAN_PEER_STATE_DISCONNECT:
-		if (peer->connection_master)
+		if (peer->connection_master) {
+			if (!peer->is_autonomous_group)
+				__connman_p2p_set_dhcp_pool(NULL);
 			stop_dhcp_server(peer);
-		else
-			__connman_dhcp_stop(peer->ipconfig);
+		} else
+			stop_dhcp_client(peer);
+
 		peer->connection_master = false;
+		peer->is_groupOwner = false;
 		peer->sub_device = NULL;
+		peer->is_autonomous_group = false;
+
+		g_free(peer->dhcp_ip);
+		peer->dhcp_ip = g_strdup("");
+		peer->is_dhcp_ip = false;
+
+		__connman_peer_set_static_ip(peer, NULL);
 		__connman_technology_set_connected(CONNMAN_SERVICE_TYPE_P2P, false);
 		break;
 	case CONNMAN_PEER_STATE_FAILURE:
-		if (manage_peer_error(peer) == 0)
+		if (manage_peer_error(peer) == 0) {
+			peer->state = new_state;
 			return 0;
+		}
 		break;
 	};
 
@@ -935,11 +1141,77 @@ int connman_peer_set_state(struct connman_peer *peer,
 	return 0;
 }
 
-int connman_peer_request_connection(struct connman_peer *peer)
+static void peer_state_cancelled(gpointer key, gpointer value,
+						gpointer user_data)
 {
-	return __connman_agent_request_peer_authorization(peer,
-					request_authorization_cb, false,
-					NULL, NULL);
+	struct connman_peer *peer = value;
+
+	if (peer && peer->state == CONNMAN_PEER_STATE_ASSOCIATION)
+		connman_peer_set_state(peer, CONNMAN_PEER_STATE_IDLE);
+}
+
+void connman_peer_state_change_by_cancelled(void)
+{
+	g_hash_table_foreach(peers_table, peer_state_cancelled, NULL);
+}
+
+static gboolean peer_request_changed(gpointer data)
+{
+	struct connman_peerrequest *peer_request = data;
+
+	struct connman_peer *peer = peer_request->peer;
+	int dev_passwd_id = peer_request->dev_passwd_id;
+
+	connman_dbus_property_changed_basic(peer->path,
+					 CONNMAN_PEER_INTERFACE, "P2PGONegRequested",
+					 DBUS_TYPE_INT32, &dev_passwd_id);
+
+	g_free(peer_request);
+
+	return FALSE;
+}
+
+static gboolean peer_invitation_changed(gpointer data)
+{
+	struct connman_peer_invitation *peer_invitation = data;
+	struct connman_peer *peer = g_hash_table_lookup(peers_table, peer_invitation->peer_path);
+
+	if (peer && peer->path && peer->registered) {
+		connman_dbus_property_changed_basic(peer->path,
+						 CONNMAN_PEER_INTERFACE, peer_invitation->signal,
+						 DBUS_TYPE_STRING, &peer_invitation->go_dev_addr);
+	}
+
+	g_free(peer_invitation->peer_path);
+	g_free(peer_invitation->signal);
+	g_free(peer_invitation->go_dev_addr);
+	g_free(peer_invitation);
+
+	return FALSE;
+}
+void connman_peer_request_connection(struct connman_peer *peer, int dev_passwd_id)
+{
+	struct connman_peerrequest *peer_request;
+
+	peer_request = g_malloc0(sizeof(struct connman_peerrequest));
+	peer_request->peer = peer;
+	peer_request->dev_passwd_id = dev_passwd_id;
+
+	g_timeout_add(100, peer_request_changed, peer_request);
+}
+
+void connman_peer_invitation_request(const char* peer_path,
+					const char* signal, const char* go_dev_addr)
+{
+	DBG("Sending %s", signal);
+
+	struct connman_peer_invitation *peer_invitation;
+	peer_invitation = g_malloc0(sizeof(struct connman_peer_invitation));
+	peer_invitation->peer_path = g_strdup(peer_path);
+	peer_invitation->signal = g_strdup(signal);
+	peer_invitation->go_dev_addr = g_strdup(go_dev_addr);
+
+	peer_invitation_changed(peer_invitation);
 }
 
 static void peer_service_free(gpointer data)
@@ -1075,6 +1347,7 @@ static const GDBusMethodTable peer_methods[] = {
 			get_peer_properties) },
 	{ GDBUS_ASYNC_METHOD("Connect", NULL, NULL, connect_peer) },
 	{ GDBUS_METHOD("Disconnect", NULL, NULL, disconnect_peer) },
+	{ GDBUS_METHOD("RejectPeer", NULL, NULL, reject_peer) },
 	{ },
 };
 
@@ -1148,6 +1421,36 @@ struct connman_peer *connman_peer_get(struct connman_device *device,
 	return peer;
 }
 
+struct connman_peer *connman_peer_get_by_path(const char *path)
+{
+	struct connman_peer *peer;
+
+	peer = g_hash_table_lookup(peers_table, path);
+
+	return peer;
+}
+
+void connman_peer_get_local_address(gpointer user_data, DBusMessageIter *iter)
+{
+	struct connman_peer *peer = user_data;
+	const char *local = "";
+
+	if (peer->ipconfig) {
+		local = __connman_ipconfig_get_local(peer->ipconfig);
+
+		connman_dbus_dict_append_basic(iter, "LocalAddress",
+				DBUS_TYPE_STRING, &local);
+	}
+}
+
+void __connman_peer_get_properties_struct(DBusMessageIter *iter, gpointer user_data)
+{
+	struct connman_peer *peer = user_data;
+
+	append_properties(iter, peer);
+}
+
+
 int connman_peer_driver_register(struct connman_peer_driver *driver)
 {
 	if (peer_driver && peer_driver != driver)
@@ -1190,9 +1493,68 @@ static void disconnect_peer_hash_table(gpointer key,
 	peer_disconnect(peer);
 }
 
+void __connman_peer_set_autonomous_group(struct connman_peer *peer, bool autonomous_group) {
+	if (!peer)
+		return;
+
+	peer->is_autonomous_group = autonomous_group;
+}
+
+void __connman_peer_set_static_ip(struct connman_peer *peer, char* static_ip) {
+	if (!peer)
+		return;
+
+	if (static_ip) {
+		peer->is_static_ip = true;
+		peer->static_ip = g_strdup(static_ip);
+	} else {
+		peer->is_static_ip = false;
+		if(peer->static_ip) {
+			g_free(peer->static_ip);
+			peer->static_ip = NULL;
+		}
+	}
+}
+
+struct connman_peer *__connman_get_connected_peer(void)
+{
+	GList *list, *start;
+
+	list = g_hash_table_get_values(peers_table);
+	start = list;
+	for (; list; list = list->next) {
+		struct connman_peer *peer = list->data;
+
+		if (peer->state == CONNMAN_PEER_STATE_READY) {
+			g_list_free(start);
+			return peer;
+		}
+	}
+	g_list_free(start);
+	return NULL;
+}
+
 void __connman_peer_disconnect_all(void)
 {
 	g_hash_table_foreach(peers_table, disconnect_peer_hash_table, NULL);
+}
+
+bool __connman_peer_get_connected_exists(void)
+{
+	GList *list, *start;
+
+	list = g_hash_table_get_values(peers_table);
+	start = list;
+	for (; list; list = list->next) {
+		struct connman_peer *peer = list->data;
+
+		if (peer->state == CONNMAN_PEER_STATE_READY) {
+			g_list_free(start);
+			return true;
+		}
+	}
+	g_list_free(start);
+	return false;
 }
 
 int __connman_peer_init(void)

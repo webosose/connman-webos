@@ -23,6 +23,7 @@
 #define __CONNMAN_TECHNOLOGY_H
 
 #include <connman/service.h>
+#include <gdbus.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,12 +50,19 @@ bool connman_technology_get_wifi_tethering(const struct connman_technology *tech
 					const char **ssid, const char **psk, int *freq);
 
 bool connman_technology_is_tethering_allowed(enum connman_service_type type);
+bool is_technology_enabled(struct connman_technology *technology);
+
+void connman_technology_set_p2p(struct connman_technology *technology, bool enabled);
+void connman_technology_set_p2p_identifier(struct connman_technology *technology,
+							const char *p2p_identifier);
+bool connman_technology_get_enable_p2p_listen(struct connman_technology *technology);
 bool connman_technology_get_p2p_listen(struct connman_technology *technology);
 void connman_technology_set_p2p_listen(struct connman_technology *technology,
 							bool enabled);
 unsigned int connman_technology_get_p2p_listen_channel(struct connman_technology *technology);
 void connman_technology_set_p2p_listen_channel(struct connman_technology *technology,
 									unsigned int listen_channel);
+void connman_technology_wps_failed_notify(struct connman_technology *technology);
 
 struct connman_technology_driver {
 	const char *name;
@@ -67,6 +75,8 @@ struct connman_technology_driver {
 							const char *ident);
 	void (*remove_interface) (struct connman_technology *technology,
 								int index);
+	int (*set_p2p_enable) (struct connman_technology *technology,
+								bool status);
 	int (*set_tethering) (struct connman_technology *technology,
 				const char *bridge, bool enabled);
 	int (*set_regdom) (struct connman_technology *technology,
@@ -83,6 +93,11 @@ struct connman_technology_driver {
 						bool enable);
 	int (*set_p2p_listen_params) (struct connman_technology *technology,
 						int period, int interval);
+	int (*set_p2p_go) (DBusMessage *msg, struct connman_technology *technology,
+						const char *identifier, const char *passphrase);
+	int (*remove_persistent_info) (struct connman_technology *technology,
+						const char *identifier);
+	int (*remove_persistent_info_all) (struct connman_technology *technology);
 };
 
 int connman_technology_driver_register(struct connman_technology_driver *driver);

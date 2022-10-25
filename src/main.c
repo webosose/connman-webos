@@ -758,6 +758,21 @@ char *connman_setting_get_string(const char *key)
 	return NULL;
 }
 
+const char *connman_option_get_string(const char *key)
+{
+	if (g_str_equal(key, CONF_VENDOR_CLASS_ID))
+		return connman_settings.vendor_class_id;
+
+	if (g_strcmp0(key, "wifi") == 0) {
+		if (!option_wifi)
+			return "nl80211,wext";
+		else
+			return option_wifi;
+	}
+
+	return NULL;
+}
+
 bool connman_setting_get_bool(const char *key)
 {
 	if (g_str_equal(key, CONF_BG_SCAN))

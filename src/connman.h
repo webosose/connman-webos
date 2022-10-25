@@ -138,6 +138,8 @@ void __connman_log_enable(struct connman_debug_desc *start,
 
 #include <connman/backtrace.h>
 
+#include <connman/option.h>
+
 #include <connman/setting.h>
 
 #include <connman/plugin.h>
@@ -272,12 +274,14 @@ void __connman_storage_delete_global(void);
 GKeyFile *__connman_storage_load_config(const char *ident);
 GKeyFile *__connman_storage_load_provider_config(const char *ident);
 
+GKeyFile *__connman_storage_open_service(const char *ident);
 int __connman_storage_save_service(GKeyFile *keyfile, const char *ident);
 GKeyFile *__connman_storage_load_provider(const char *identifier);
 void __connman_storage_save_provider(GKeyFile *keyfile, const char *identifier);
 bool __connman_storage_remove_provider(const char *identifier);
 char **__connman_storage_get_providers(void);
 bool __connman_storage_remove_service(const char *service_id);
+gchar **__connman_storage_get_p2p_persistents(void);
 
 int __connman_detect_init(void);
 void __connman_detect_cleanup(void);
@@ -559,6 +563,8 @@ void __connman_technology_remove_interface(enum connman_service_type type,
 				int index, const char *ident);
 void __connman_technology_notify_regdom_by_device(struct connman_device *device,
 						int result, const char *alpha2);
+int __connman_technology_set_p2p_go(DBusMessage *msg, const char *ident,
+				const char *passphrase);
 
 #include <connman/device.h>
 
@@ -571,6 +577,7 @@ enum connman_service_type __connman_device_get_service_type(struct connman_devic
 struct connman_device *__connman_device_find_device(enum connman_service_type type);
 int __connman_device_request_scan(enum connman_service_type type);
 int __connman_device_request_scan_full(enum connman_service_type type);
+int __connman_device_request_cancel_p2p(enum connman_service_type type);
 int __connman_device_request_hidden_scan(struct connman_device *device,
 				const char *ssid, unsigned int ssid_len,
 				const char *identity, const char *passphrase,
@@ -638,13 +645,25 @@ bool __connman_config_address_provisioned(const char *address,
 
 #include <connman/tethering.h>
 
+struct connman_station_info {
+	bool is_connected;
+	char *path;
+	char *type;
+	char ip[64];
+	char mac[32];
+	char hostname[64];
+};
+
 int __connman_tethering_init(void);
 void __connman_tethering_cleanup(void);
 
 const char *__connman_tethering_get_bridge(void);
+int __connman_tethering_sta_count();
+GHashTable *__connman_tethering_get_sta_hash();
 int __connman_tethering_set_enabled(void);
 void __connman_tethering_set_disabled(void);
 void __connman_tethering_list_clients(DBusMessageIter *array);
+int __connman_tethering_set_enabled_with_ip(const char *ip);
 
 int __connman_private_network_request(DBusMessage *msg, const char *owner);
 int __connman_private_network_release(const char *path);
@@ -688,6 +707,7 @@ int __connman_service_compare(const struct connman_service *a,
 					const struct connman_service *b);
 
 struct connman_service *__connman_service_lookup_from_index(int index);
+struct connman_service *__connman_service_lookup_from_ident(const char *identifier);
 struct connman_service *__connman_service_create_from_network(struct connman_network *network);
 struct connman_service *__connman_service_create_from_provider(struct connman_provider *provider);
 bool __connman_service_index_is_default(int index);
@@ -842,7 +862,9 @@ void __connman_peer_cleanup(void);
 
 void __connman_peer_list_struct(DBusMessageIter *array);
 const char *__connman_peer_get_path(struct connman_peer *peer);
-void __connman_peer_disconnect_all(void);
+void __connman_peer_set_static_ip(struct connman_peer *peer, char* static_ip);
+void __connman_peer_set_autonomous_group(struct connman_peer *peer, bool autonomous_group);
+bool __connman_peer_get_connected_exists(void);
 
 int __connman_peer_service_init(void);
 void __connman_peer_service_cleanup(void);
@@ -996,11 +1018,27 @@ typedef void (*ippool_collision_cb_t) (struct connman_ippool *pool,
 int __connman_ippool_init(void);
 void __connman_ippool_cleanup(void);
 
+#define __connman_ippool_ref(ipconfig) \
+	__connman_ippool_ref_debug(ipconfig, __FILE__, __LINE__, __func__)
+#define __connman_ippool_unref(ipconfig) \
+	__connman_ippool_unref_debug(ipconfig, __FILE__, __LINE__, __func__)
+
+struct connman_ippool *__connman_ippool_ref_debug(struct connman_ippool *pool,
+			const char *file, int line, const char *caller);
+void __connman_ippool_unref_debug(struct connman_ippool *pool,
+			const char *file, int line, const char *caller);
 void __connman_ippool_free(struct connman_ippool *pool);
 
 struct connman_ippool *__connman_ippool_create(int index,
 					unsigned int start,
 					unsigned int range,
+					ippool_collision_cb_t collision_cb,
+					void *user_data);
+
+struct connman_ippool *__connman_ippool_create_with_block(int index,
+					unsigned int start,
+					unsigned int range,
+					uint32_t block,
 					ippool_collision_cb_t collision_cb,
 					void *user_data);
 
@@ -1090,3 +1128,6 @@ int __connman_util_get_random(uint64_t *val);
 unsigned int __connman_util_random_delay_ms(unsigned int secs);
 int __connman_util_init(void);
 void __connman_util_cleanup(void);
+char *__connman_util_insert_colon_to_mac_addr(const char *mac_addr);
+char *__connman_util_mac_binary_to_string_no_colon(const unsigned char binmac[6]);
+const char * g_supplicant_peer_identifier_from_intf_address(const char* pintf_addr);
