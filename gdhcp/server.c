@@ -255,6 +255,9 @@ static uint32_t find_free_or_expired_nip(GDHCPServer *dhcp_server,
 		if ((ip_addr & 0xff) == 0xff)
 			continue;
 
+		if (htonl(ip_addr) == dhcp_server->server_nip)
+			continue;
+
 		lease = find_lease_by_nip(dhcp_server, ip_addr);
 		if (lease)
 			continue;

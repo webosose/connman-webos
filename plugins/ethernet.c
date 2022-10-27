@@ -347,6 +347,7 @@ static void eth_tech_add_interface(struct connman_technology *technology,
 
 	eth_interface_list = g_list_prepend(eth_interface_list,
 					(GINT_TO_POINTER((int) index)));
+	connman_technology_interface_changed(technology);
 }
 
 static void eth_tech_remove_interface(struct connman_technology *technology,
@@ -356,6 +357,7 @@ static void eth_tech_remove_interface(struct connman_technology *technology,
 
 	eth_interface_list = g_list_remove(eth_interface_list,
 					GINT_TO_POINTER((int) index));
+	connman_technology_interface_changed(technology);
 }
 
 static void eth_tech_enable_tethering(struct connman_technology *technology,
@@ -407,6 +409,7 @@ static void eth_tech_disable_tethering(struct connman_technology *technology,
 }
 
 static int eth_tech_set_tethering(struct connman_technology *technology,
+				const char *identifier, const char *passphrase,
 				const char *bridge, bool enabled)
 {
 	if (!connman_technology_is_tethering_allowed(

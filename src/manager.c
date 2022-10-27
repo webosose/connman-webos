@@ -432,7 +432,8 @@ static int parse_peers_service_specs(DBusMessageIter *array,
 							query, query_len);
 		} else if (!g_strcmp0(key, "UpnpService")) {
 			dbus_message_iter_get_basic(&inter, spec);
-			*spec_len = strlen((const char *)*spec)+1;
+			if (*spec)
+				*spec_len = strlen((const char *)*spec)+1;
 		} else if (!g_strcmp0(key, "UpnpVersion")) {
 			dbus_message_iter_get_basic(&inter, version);
 		} else if (!g_strcmp0(key, "WiFiDisplayIEs")) {
@@ -483,10 +484,9 @@ static DBusMessage *register_peer_service(DBusConnection *conn,
 
 	ret = __connman_peer_service_register(owner, msg, spec, spec_len,
 					query, query_len, version,master);
-	if (!ret)
+	if (!ret || ret == -EINPROGRESS)
 		return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
-	if (ret == -EINPROGRESS)
-		return NULL;
+	
 error:
 	return __connman_error_failed(msg, -ret);
 }

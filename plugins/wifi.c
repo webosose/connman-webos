@@ -6000,29 +6000,27 @@ static void tech_remove(struct connman_technology *technology)
 
 static GSupplicantSSID *ssid_ap_init(const char *ssid, const char *passphrase)
 {
-    struct connman_technology *technology;
+    
 	GSupplicantSSID *ap;
-	int freq;
-	bool ret;
+	unsigned int channel;
+	unsigned int freq;
 
 	ap = g_try_malloc0(sizeof(GSupplicantSSID));
 	if (!ap)
 		return NULL;
 
-	ret = connman_technology_get_wifi_tethering(technology,
-						&ssid, &passphrase,
-						&freq);
-	if (ret == false)
-		return NULL;
+	channel = connman_technology_get_wifi_tethering_channel();
+
+	if (channel)
+		freq = 2412 + ((channel - 1) * 5);
+	else
+		freq = 2412;
 
 	ap->mode = G_SUPPLICANT_MODE_MASTER;
 	ap->ssid = ssid;
 	ap->ssid_len = strlen(ssid);
 	ap->scan_ssid = 0;
-	if (freq)
-		ap->freq = freq;
-	else
-		ap->freq = 2412;
+	ap->freq = freq;
 
 	if (!passphrase || strlen(passphrase) == 0) {
 		ap->security = G_SUPPLICANT_SECURITY_NONE;

@@ -259,14 +259,21 @@ int connman_technology_tethering_notify(struct connman_technology *technology,
 							bool enabled)
 {
 	int err;
+	const char *ip;
 
 	DBG("technology %p enabled %u", technology, enabled);
 
 	if (technology->tethering == enabled)
 		return -EALREADY;
 
+	ip = technology->tethering_ipaddress;
+
 	if (enabled) {
-		err = __connman_tethering_set_enabled();
+		if (!ip || strlen(ip) == 0)
+			err = __connman_tethering_set_enabled();
+		else
+			err = __connman_tethering_set_enabled_with_ip(ip);
+
 		if (err < 0)
 			return err;
 	} else
@@ -399,12 +406,12 @@ enum connman_service_type connman_technology_get_type
 	return technology->type;
 }
 
-bool connman_technology_get_wifi_tethering(const struct connman_technology *technology,
-					const char **ssid, const char **psk,
-					int *freq)
+bool connman_technology_get_wifi_tethering(const char **ssid,
+							const char **psk)
 {
 	bool force = true;
 
+    struct connman_technology *technology;
 	if (!ssid || !psk)
 		return false;
 
@@ -424,9 +431,20 @@ bool connman_technology_get_wifi_tethering(const struct connman_technology *tech
 
 	*ssid = technology->tethering_ident;
 	*psk = technology->tethering_passphrase;
-	*freq = technology->tethering_freq;
+	//*freq = technology->tethering_freq;
 
 	return true;
+}
+
+unsigned int connman_technology_get_wifi_tethering_channel(void)
+{
+	struct connman_technology *technology;
+
+	technology = technology_find(CONNMAN_SERVICE_TYPE_WIFI);
+	if (!technology)
+		return 0;
+
+	return technology->tethering_channel;
 }
 
 static void free_rfkill(gpointer data)
@@ -670,9 +688,15 @@ static void append_properties(DBusMessageIter *iter,
 					DBUS_TYPE_STRING,
 					&technology->tethering_passphrase);
 
-	connman_dbus_dict_append_basic(&dict, "TetheringFreq",
-				DBUS_TYPE_INT32,
-				&technology->tethering_freq);
+	if (technology->tethering_ipaddress)
+		connman_dbus_dict_append_basic(&dict, "TetheringIPAddress",
+					DBUS_TYPE_STRING,
+					&technology->tethering_ipaddress);
+
+	if (technology->tethering_channel)
+		connman_dbus_dict_append_basic(&dict, "TetheringChannel",
+					DBUS_TYPE_UINT32,
+					&technology->tethering_channel);
 
 	if(technology->p2p_identifier)
 		connman_dbus_dict_append_basic(&dict, "P2PIdentifier",
@@ -1597,10 +1621,19 @@ static DBusMessage *set_property(DBusConnection *conn,
 		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
 			return __connman_error_not_supported(msg);
 
-		err = __connman_service_check_passphrase(CONNMAN_SERVICE_SECURITY_PSK,
-							str);
-		if (err < 0)
-			return __connman_error_passphrase_required(msg);
+		/* Allow empty passphrases for setting up an AP with open
+		 * security type */
+
+		if (strlen(str) == 0) {
+			g_free(technology->tethering_passphrase);
+			technology->tethering_passphrase = NULL;
+		}
+		else {
+			err = __connman_service_check_passphrase(CONNMAN_SERVICE_SECURITY_PSK,
+								str);
+			if (err < 0)
+				return __connman_error_passphrase_required(msg);
+		}
 
 		if (g_strcmp0(technology->tethering_passphrase, str) != 0) {
 			g_free(technology->tethering_passphrase);
@@ -1613,26 +1646,53 @@ static DBusMessage *set_property(DBusConnection *conn,
 					DBUS_TYPE_STRING,
 					&technology->tethering_passphrase);
 		}
-	} else if (g_str_equal(name, "TetheringFreq")) {
-		dbus_int32_t freq;
+	} else if (g_str_equal(name, "TetheringChannel")) {
+		dbus_uint32_t channel;
 
-		if (type != DBUS_TYPE_INT32)
+		if (type != DBUS_TYPE_UINT32)
 			return __connman_error_invalid_arguments(msg);
 
-		dbus_message_iter_get_basic(&value, &freq);
+		dbus_message_iter_get_basic(&value, &channel);
 
 		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
 			return __connman_error_not_supported(msg);
 
-		if (freq >= 0) {
-			technology->tethering_freq = freq;
+		if (channel == 0 || channel > 13)
+			return __connman_error_invalid_arguments(msg);
+
+		if (technology->tethering_channel != channel) {
+
+			technology->tethering_channel = channel;
 			technology_save(technology);
 
 			connman_dbus_property_changed_basic(technology->path,
 					CONNMAN_TECHNOLOGY_INTERFACE,
-					"TetheringFreq",
-					DBUS_TYPE_INT32,
-					&technology->tethering_freq);
+					"TetheringChannel",
+					DBUS_TYPE_UINT32,
+					&technology->tethering_channel);
+		}
+	} else if (g_str_equal(name, "TetheringIPAddress")) {
+		const char *str;
+
+		dbus_message_iter_get_basic(&value, &str);
+
+		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
+			return __connman_error_not_supported(msg);
+
+		if (strlen(str) == 0) {
+				g_free(technology->tethering_ipaddress);
+				technology->tethering_ipaddress = NULL;
+		}
+		if (g_strcmp0(technology->tethering_ipaddress, str) != 0) {
+			g_free(technology->tethering_ipaddress);
+			technology->tethering_ipaddress = g_strdup(str);
+			technology_save(technology);
+
+			connman_dbus_property_changed_basic(technology->path,
+					CONNMAN_TECHNOLOGY_INTERFACE,
+					"TetheringIPAddress",
+					DBUS_TYPE_STRING,
+					&technology->tethering_ipaddress);
 		}
 	} else if (g_str_equal(name, "P2PListen")) {
 		bool enable;

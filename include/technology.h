@@ -45,10 +45,9 @@ void connman_technology_regdom_notify(struct connman_technology *technology,
 
 enum connman_service_type connman_technology_get_type
 				(struct connman_technology *technology);
-
-bool connman_technology_get_wifi_tethering(const struct connman_technology *technology,
-					const char **ssid, const char **psk, int *freq);
-
+bool connman_technology_get_wifi_tethering(const char **ssid,
+							const char **psk);
+unsigned int connman_technology_get_wifi_tethering_channel(void);
 bool connman_technology_is_tethering_allowed(enum connman_service_type type);
 bool is_technology_enabled(struct connman_technology *technology);
 
