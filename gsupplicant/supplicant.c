@@ -4819,6 +4819,20 @@ go_next:
 
 	return;
 }
+
+static void signal_invitation_received(const char *path, DBusMessageIter *iter)
+{
+	GSupplicantInterface *interface;
+
+	SUPPLICANT_DBG("signal invitation received");
+
+	interface = g_hash_table_lookup(interface_table, path);
+	if (!interface)
+		return;
+
+	interface_p2p_invitation_received(iter, interface);
+}
+
 static void empty_free_function(void* ptr)
 {
 	// Does nothing
@@ -5787,11 +5801,20 @@ static struct {
 
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "GONegotiationSuccess", signal_group_success },
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "GONegotiationFailure", signal_group_failure },
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "PersistentGroupAdded", signal_persistent_group_added	},
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "PersistentGroupRemoved", signal_persistent_group_removed	},
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "GroupStarted", signal_group_started },
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "GroupFinished", signal_group_finished },
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "GONegotiationRequest", signal_group_request },
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ServiceDiscoveryResponse", signal_sd_response	},
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ServiceDiscoveryASPResponse", signal_sd_asp_response	},
 
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "P2PSProvisionStart", signal_p2ps_prov_start	},
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "P2PSProvisionDone",	 signal_p2ps_prov_done	},
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "InvitationResult", signal_invitation_result },
+	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "InvitationReceived", signal_invitation_received	},
 	{ SUPPLICANT_INTERFACE ".Group", "PeerJoined", signal_group_peer_joined },
+	{ SUPPLICANT_INTERFACE ".Group", "PeerJoinedWithIP", signal_peer_joined_with_ip },
 	{ SUPPLICANT_INTERFACE ".Group", "PeerDisconnected", signal_group_peer_disconnected },
 
 	{ }

@@ -88,6 +88,20 @@ struct connman_private_network {
 	char *primary_dns;
 	char *secondary_dns;
 };
+
+static void destroy_station(gpointer key, gpointer value, gpointer user_data)
+{
+	struct connman_station_info *station_info;
+
+	__sync_synchronize();
+
+	station_info = value;
+
+	g_free(station_info->path);
+	g_free(station_info->type);
+	g_free(station_info);
+}
+
 int connman_technology_tethering_add_station(enum connman_service_type type,
                                                const char *mac)
 {
@@ -805,6 +819,9 @@ int __connman_private_network_request(DBusMessage *msg, const char *owner)
 
 	g_hash_table_insert(pn_hash, pn->path, pn);
 
+	sta_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
+						NULL, NULL);
+
 	return 0;
 
 error:
@@ -880,6 +897,8 @@ void __connman_tethering_cleanup(void)
 		return;
 
 	g_hash_table_destroy(pn_hash);
+	g_hash_table_foreach(sta_hash, destroy_station, NULL);
+	g_hash_table_destroy(sta_hash);
 
 	g_hash_table_destroy(clients_notify->remove);
 	g_free(clients_notify);

@@ -77,6 +77,7 @@ struct connman_technology_driver {
 	int (*set_p2p_enable) (struct connman_technology *technology,
 								bool status);
 	int (*set_tethering) (struct connman_technology *technology,
+				const char *identifier, const char *passphrase,
 				const char *bridge, bool enabled);
 	int (*set_regdom) (struct connman_technology *technology,
 						const char *alpha2);

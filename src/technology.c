@@ -304,8 +304,7 @@ static int set_tethering(struct connman_technology *technology,
 	if (!bridge)
 		return -EOPNOTSUPP;
 
-	if (technology->type == CONNMAN_SERVICE_TYPE_WIFI &&
-	    (!ident || !passphrase))
+	if (technology->type == CONNMAN_SERVICE_TYPE_WIFI && !ident)
 		return -EINVAL;
 
 	for (tech_drivers = technology->driver_list; tech_drivers;
@@ -315,7 +314,8 @@ static int set_tethering(struct connman_technology *technology,
 		if (!driver || !driver->set_tethering)
 			continue;
 
-		err = driver->set_tethering(technology, bridge, enabled);
+		err = driver->set_tethering(technology, ident, passphrase,
+				bridge, enabled);
 
 		if (result == -EINPROGRESS)
 			continue;
@@ -2150,6 +2150,7 @@ static void technology_put(struct connman_technology *technology)
 	g_free(technology->regdom);
 	g_free(technology->tethering_ident);
 	g_free(technology->tethering_passphrase);
+	g_free(technology->tethering_ipaddress);
 	g_free(technology->p2p_identifier);
 	g_free(technology);
 }
