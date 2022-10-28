@@ -68,6 +68,11 @@ struct connman_device {
 	char *last_network;
 	struct connman_network *network;
 	GHashTable *networks;
+
+	unsigned int wifi_rssi;
+	unsigned int wifi_link_speed;
+	unsigned int wifi_frequency;
+	unsigned int wifi_noise;
 };
 
 static void clear_pending_trigger(struct connman_device *device)
@@ -558,6 +563,14 @@ void connman_device_set_interface(struct connman_device *device,
 	}
 }
 
+const char *connman_device_get_interface(struct connman_device *device)
+{
+	if (!device)
+		return NULL;
+
+	return device->interface;
+}
+
 /**
  * connman_device_set_ident:
  * @device: device structure
@@ -826,6 +839,25 @@ int connman_device_set_string(struct connman_device *device,
 	return 0;
 }
 
+int connman_device_set_integer(struct connman_device *device,
+                                       const char *key, int value)
+{
+	DBG("device %p key %s value %d", device, key, value);
+
+	if (g_strcmp0(key, "WiFi.RSSI") == 0)
+		device->wifi_rssi = value;
+	else if (g_strcmp0(key, "WiFi.LinkSpeed") == 0)
+		device->wifi_link_speed = value;
+	else if (g_strcmp0(key, "WiFi.Frequency") == 0)
+		device->wifi_frequency = value;
+	else if (g_strcmp0(key, "WiFi.Noise") == 0)
+		device->wifi_noise = value;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
 /**
  * connman_device_get_string:
  * @device: device structure
@@ -850,6 +882,23 @@ const char *connman_device_get_string(struct connman_device *device,
 		return device->path;
 
 	return NULL;
+}
+
+int connman_device_get_integer(struct connman_device *device,
+                                       const char *key)
+{
+	DBG("device %p key %s", device, key);
+
+	if (g_strcmp0(key, "WiFi.RSSI") == 0)
+		return device->wifi_rssi;
+	else if (g_strcmp0(key, "WiFi.LinkSpeed") == 0)
+		return device->wifi_link_speed;
+	else if (g_strcmp0(key, "WiFi.Frequency") == 0)
+		return device->wifi_frequency;
+	else if (g_strcmp0(key, "WiFi.Noise") == 0)
+		return device->wifi_noise;
+
+	return 0;
 }
 
 /**
@@ -1183,6 +1232,77 @@ void __connman_device_stop_scan(enum connman_service_type type)
 	}
 }
 
+static int device_cancel_p2p(struct connman_device *device)
+{
+	if (!device->driver || !device->driver->cancel_p2p)
+		return -EOPNOTSUPP;
+
+	if (!device->powered)
+		return -ENOLINK;
+
+	return device->driver->cancel_p2p(device);
+}
+int __connman_device_request_cancel_p2p(enum connman_service_type type)
+{
+	int last_err = -ENOSYS;
+	GSList *list;
+	int err;
+
+	switch (type) {
+	case CONNMAN_SERVICE_TYPE_UNKNOWN:
+	case CONNMAN_SERVICE_TYPE_SYSTEM:
+	case CONNMAN_SERVICE_TYPE_ETHERNET:
+	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+	case CONNMAN_SERVICE_TYPE_CELLULAR:
+	case CONNMAN_SERVICE_TYPE_GPS:
+	case CONNMAN_SERVICE_TYPE_VPN:
+	case CONNMAN_SERVICE_TYPE_GADGET:
+		return -EOPNOTSUPP;
+	case CONNMAN_SERVICE_TYPE_WIFI:
+	case CONNMAN_SERVICE_TYPE_P2P:
+		break;
+	}
+
+	for (list = device_list; list; list = list->next) {
+		struct connman_device *device = list->data;
+		enum connman_service_type service_type =
+			__connman_device_get_service_type(device);
+
+		if (service_type != CONNMAN_SERVICE_TYPE_UNKNOWN) {
+			if (type == CONNMAN_SERVICE_TYPE_P2P) {
+				if (service_type != CONNMAN_SERVICE_TYPE_WIFI)
+					continue;
+			} else if (service_type != type)
+				continue;
+		}
+
+		if (connman_setting_get_bool("SupportP2P0Interface") == TRUE &&
+				g_strcmp0(connman_device_get_string(device, "Interface"),
+					connman_option_get_string("P2PDevice")) != 0)
+			continue;
+
+		err = device_cancel_p2p(device);
+		if (err == 0) {
+			return 0;
+		} else {
+			last_err = err;
+			DBG("device %p err %d", device, err);
+		}
+	}
+
+	return last_err;
+}
+int connman_device_request_signal_info(struct connman_device *device,
+                                       connman_device_request_signal_info_cb cb, void *user_data)
+{
+	if (device->type != CONNMAN_DEVICE_TYPE_WIFI)
+		return -EOPNOTSUPP;
+
+	if (!device->driver || !device->driver->get_signal_info)
+		return -EOPNOTSUPP;
+
+	return device->driver->get_signal_info(device, cb, user_data);
+}
 static char *index2ident(int index, const char *prefix)
 {
 	struct ifreq ifr;

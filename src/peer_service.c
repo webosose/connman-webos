@@ -228,6 +228,20 @@ static int register_peer_service(struct _peer_service *service)
 					service_registration_result, service);
 }
 
+static void unregister_all_services(gpointer key, gpointer value,
+						gpointer user_data)
+{
+	struct _peer_service_owner *ps_owner = value;
+	GList *list;
+
+	for (list = ps_owner->services; list; list = list->next) {
+		struct _peer_service *service = list->data;
+
+		if (service->registered)
+			remove_peer_service(service);
+	}
+}
+
 static void register_all_services(gpointer key, gpointer value,
 						gpointer user_data)
 {
@@ -244,11 +258,12 @@ static void register_all_services(gpointer key, gpointer value,
 
 void __connman_peer_service_set_driver(struct connman_peer_driver *driver)
 {
-	peer_driver = driver;
-	if (!peer_driver)
-		return;
+	if (!driver)
+		g_hash_table_foreach(owners_map, unregister_all_services, NULL);
 
-	g_hash_table_foreach(owners_map, register_all_services, NULL);
+	peer_driver = driver;
+	if (peer_driver)
+		g_hash_table_foreach(owners_map, register_all_services, NULL);
 }
 
 int __connman_peer_service_register(const char *owner, DBusMessage *msg,

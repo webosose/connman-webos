@@ -23,6 +23,7 @@
 #define __CONNMAN_TECHNOLOGY_H
 
 #include <connman/service.h>
+#include <gdbus.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,11 +45,23 @@ void connman_technology_regdom_notify(struct connman_technology *technology,
 
 enum connman_service_type connman_technology_get_type
 				(struct connman_technology *technology);
-
-bool connman_technology_get_wifi_tethering(const struct connman_technology *technology,
-					const char **ssid, const char **psk, int *freq);
-
+bool connman_technology_get_wifi_tethering(const char **ssid,
+							const char **psk);
+unsigned int connman_technology_get_wifi_tethering_channel(void);
 bool connman_technology_is_tethering_allowed(enum connman_service_type type);
+bool is_technology_enabled(struct connman_technology *technology);
+
+void connman_technology_set_p2p(struct connman_technology *technology, bool enabled);
+void connman_technology_set_p2p_identifier(struct connman_technology *technology,
+							const char *p2p_identifier);
+bool connman_technology_get_enable_p2p_listen(struct connman_technology *technology);
+bool connman_technology_get_p2p_listen(struct connman_technology *technology);
+void connman_technology_set_p2p_listen(struct connman_technology *technology,
+							bool enabled);
+unsigned int connman_technology_get_p2p_listen_channel(struct connman_technology *technology);
+void connman_technology_set_p2p_listen_channel(struct connman_technology *technology,
+									unsigned int listen_channel);
+void connman_technology_wps_failed_notify(struct connman_technology *technology);
 
 struct connman_technology_driver {
 	const char *name;
@@ -61,10 +74,30 @@ struct connman_technology_driver {
 							const char *ident);
 	void (*remove_interface) (struct connman_technology *technology,
 								int index);
+	int (*set_p2p_enable) (struct connman_technology *technology,
+								bool status);
 	int (*set_tethering) (struct connman_technology *technology,
+				const char *identifier, const char *passphrase,
 				const char *bridge, bool enabled);
 	int (*set_regdom) (struct connman_technology *technology,
 						const char *alpha2);
+	int (*set_p2p_identifier) (struct connman_technology *technology,
+						const char *p2p_identifier);
+	int (*set_p2p_persistent) (struct connman_technology *technology,
+						bool persistent_reconnect);
+	int (*set_p2p_listen_channel) (struct connman_technology *technology,
+						unsigned int listen_channel);
+	int (*set_p2p_go_intent) (struct connman_technology *technology,
+						unsigned int go_intent);
+	int (*set_p2p_listen) (struct connman_technology *technology,
+						bool enable);
+	int (*set_p2p_listen_params) (struct connman_technology *technology,
+						int period, int interval);
+	int (*set_p2p_go) (DBusMessage *msg, struct connman_technology *technology,
+						const char *identifier, const char *passphrase);
+	int (*remove_persistent_info) (struct connman_technology *technology,
+						const char *identifier);
+	int (*remove_persistent_info_all) (struct connman_technology *technology);
 };
 
 int connman_technology_driver_register(struct connman_technology_driver *driver);

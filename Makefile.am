@@ -11,13 +11,13 @@ include_HEADERS = include/log.h include/plugin.h \
 			include/device.h include/network.h include/inet.h \
 			include/storage.h include/provision.h \
 			include/session.h include/ipaddress.h include/agent.h \
-			include/inotify.h include/peer.h include/machine.h \
-			include/acd.h include/tethering.h
+			include/inotify.h include/peer.h include/sd.h include/machine.h include/types.h \
+			include/acd.h include/group.h include/tethering.h
 
 nodist_include_HEADERS = include/version.h
 
 noinst_HEADERS = include/rtnl.h include/task.h \
-			include/dbus.h \
+			include/dbus.h include/option.h\
 			include/provider.h include/vpn-dbus.h \
 			include/utsname.h include/timeserver.h include/proxy.h \
 			include/technology.h include/setting.h \
@@ -128,9 +128,9 @@ src_connmand_SOURCES = $(gdhcp_sources) $(gweb_sources) $(stats_sources) \
 			src/technology.c src/counter.c src/ntp.c \
 			src/session.c src/tethering.c src/wpad.c src/wispr.c \
 			src/6to4.c src/ippool.c src/bridge.c src/nat.c \
-			src/ipaddress.c src/inotify.c src/ipv6pd.c src/peer.c \
+			src/ipaddress.c src/inotify.c src/ipv6pd.c src/sd.c src/peer.c \
 			src/peer_service.c src/machine.c src/util.c \
-			src/acd.c
+			src/p2pgo.c src/group.c src/acd.c
 
 if INTERNAL_DNS_BACKEND
 src_connmand_SOURCES += src/dnsproxy.c

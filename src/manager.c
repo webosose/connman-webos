@@ -30,6 +30,7 @@
 #include <connman/agent.h>
 
 #include "connman.h"
+#include "include/group.h"
 
 static bool connman_state_idle;
 static dbus_bool_t sessionmode;
@@ -134,6 +135,24 @@ static DBusMessage *get_technologies(DBusConnection *conn,
 
 	__connman_dbus_append_objpath_dict_array(reply,
 			append_technology_structs, NULL);
+
+	return reply;
+}
+
+static DBusMessage *get_sta_count(DBusConnection *conn,
+               DBusMessage *msg, void *data)
+{
+	DBusMessage *reply;
+	int sta_count = 0;
+
+	reply = dbus_message_new_method_return(msg);
+	if (reply == NULL)
+		return NULL;
+
+	sta_count = __connman_tethering_sta_count();
+
+	dbus_message_append_args(reply,
+				DBUS_TYPE_INT32, &sta_count, DBUS_TYPE_INVALID);
 
 	return reply;
 }
@@ -431,7 +450,8 @@ static int parse_peers_service_specs(DBusMessageIter *array,
 							query, query_len);
 		} else if (!g_strcmp0(key, "UpnpService")) {
 			dbus_message_iter_get_basic(&inter, spec);
-			*spec_len = strlen((const char *)*spec)+1;
+			if (*spec)
+				*spec_len = strlen((const char *)*spec)+1;
 		} else if (!g_strcmp0(key, "UpnpVersion")) {
 			dbus_message_iter_get_basic(&inter, version);
 		} else if (!g_strcmp0(key, "WiFiDisplayIEs")) {
@@ -482,10 +502,9 @@ static DBusMessage *register_peer_service(DBusConnection *conn,
 
 	ret = __connman_peer_service_register(owner, msg, spec, spec_len,
 					query, query_len, version,master);
-	if (!ret)
+	if (!ret || ret == -EINPROGRESS)
 		return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
-	if (ret == -EINPROGRESS)
-		return NULL;
+	
 error:
 	return __connman_error_failed(msg, -ret);
 }
@@ -521,6 +540,64 @@ error:
 
 }
 
+static DBusMessage *create_group(DBusConnection *conn,
+		DBusMessage *msg, void *data)
+{
+	DBusMessageIter iter;
+	const char *identifier, *passphrase;
+	int err;
+
+	DBG("");
+
+	if (dbus_message_iter_init(msg, &iter) == FALSE)
+				return __connman_error_invalid_arguments(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+			return __connman_error_invalid_arguments(msg);
+
+	dbus_message_iter_get_basic(&iter, &identifier);
+
+	if (strlen(identifier) > (P2P_MAX_SSID - P2P_WILDCARD_SSID_LEN))
+			return __connman_error_invalid_arguments(msg);
+
+	dbus_message_iter_next(&iter);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+			return __connman_error_invalid_arguments(msg);
+
+	dbus_message_iter_get_basic(&iter, &passphrase);
+
+	if ((strlen(passphrase) > 1 && strlen(passphrase) < 8) || strlen(passphrase) > 63)
+			return __connman_error_passphrase_required(msg);
+
+	err = __connman_technology_set_p2p_go(msg, identifier, passphrase);
+
+	if (err < 0)
+			return __connman_error_failed(msg, -err);
+
+	return NULL;
+}
+
+static void append_group_structs(DBusMessageIter *iter, void *user_data)
+{
+	__connman_group_list_struct(iter);
+}
+
+static DBusMessage *get_groups(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(msg);
+	if (!reply)
+		return NULL;
+
+	__connman_dbus_append_objpath_dict_array(reply,
+			append_group_structs, NULL);
+
+	return reply;
+}
+
 static const GDBusMethodTable manager_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 			NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
@@ -531,6 +608,9 @@ static const GDBusMethodTable manager_methods[] = {
 	{ GDBUS_METHOD("GetTechnologies",
 			NULL, GDBUS_ARGS({ "technologies", "a(oa{sv})" }),
 			get_technologies) },
+	{ GDBUS_METHOD("GetStaCount",
+			NULL, GDBUS_ARGS({ "stacount", "i" }),
+			get_sta_count) },
 	{ GDBUS_DEPRECATED_METHOD("RemoveProvider",
 			GDBUS_ARGS({ "provider", "o" }), NULL,
 			remove_provider) },
@@ -583,6 +663,13 @@ static const GDBusMethodTable manager_methods[] = {
 	{ GDBUS_METHOD("UnregisterPeerService",
 			GDBUS_ARGS({ "specification", "a{sv}" }), NULL,
 			unregister_peer_service) },
+	{ GDBUS_ASYNC_METHOD("CreateGroup",
+			GDBUS_ARGS({ "identifier", "s" },{ "passphrase", "s" }),
+			GDBUS_ARGS({ "path", "o" }),
+			create_group) },
+	{ GDBUS_METHOD("GetGroups",
+			NULL, GDBUS_ARGS({ "groups", "a(oa{sv})" }),
+			get_groups) },
 	{ },
 };
 
@@ -603,6 +690,11 @@ static const GDBusSignalTable manager_signals[] = {
 	{ GDBUS_SIGNAL("TetheringClientsChanged",
 			GDBUS_ARGS({ "registered", "as" },
 					{ "removed", "as" })) },
+    { GDBUS_SIGNAL("GroupAdded",
+			GDBUS_ARGS({ "path", "o" },
+					{ "properties", "a{sv}" })) },
+	{ GDBUS_SIGNAL("GroupRemoved",
+			GDBUS_ARGS({ "path", "o"})) },
 	{ },
 };
 

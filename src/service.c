@@ -58,6 +58,7 @@ static bool services_dirty = false;
 static bool enable_online_to_ready_transition = false;
 static unsigned int online_check_initial_interval = 0;
 static unsigned int online_check_max_interval = 0;
+bool block_auto_connect = FALSE;
 
 struct connman_stats {
 	bool valid;
@@ -155,6 +156,7 @@ static struct connman_ipconfig *create_ip6config(struct connman_service *service
 		int index);
 static void dns_changed(struct connman_service *service);
 static void vpn_auto_connect(void);
+static void append_bsses(DBusMessageIter *iter, void *user_data);
 
 struct find_data {
 	const char *path;
@@ -2539,6 +2541,57 @@ int connman_service_iterate_services(connman_service_iterate_cb cb,
 	return ret;
 }
 
+static void append_bss(DBusMessageIter *iter, void *key, void *value)
+{
+	char *bss_id = key;
+	struct connman_bss *bss_props = value;
+	DBusMessageIter item;
+	int signal = 0;
+	int frequency = 0;
+
+	connman_dbus_dict_open(iter, &item);
+
+	if (!bss_id || !bss_props)
+		goto empty_dict;
+
+	signal = connman_network_get_bss_signal(bss_props);
+	frequency = connman_network_get_bss_frequency(bss_props);
+
+	connman_dbus_dict_append_basic(&item, "Id",
+						DBUS_TYPE_STRING, &bss_id);
+
+	connman_dbus_dict_append_basic(&item, "Signal",
+						DBUS_TYPE_INT32, &signal);
+
+	connman_dbus_dict_append_basic(&item, "Frequency",
+						DBUS_TYPE_INT32, &frequency);
+
+empty_dict:
+	connman_dbus_dict_close(iter, &item);
+}
+
+static void append_bsses(DBusMessageIter *iter, void *user_data)
+{
+	GHashTable *bsses = user_data;
+	GHashTableIter hash;
+	gpointer key, value;
+
+	if (!bsses) {
+		// Empty array when no BSSes.
+		return;
+	}
+
+	g_hash_table_iter_init(&hash, bsses);
+
+	while (g_hash_table_iter_next(&hash, &key, &value)) {
+		DBusMessageIter dict;
+
+		dbus_message_iter_open_container(iter, DBUS_TYPE_STRUCT, NULL, &dict);
+		append_bss(&dict, key, value);
+		dbus_message_iter_close_container(iter, &dict);
+	}
+}
+
 static void append_properties(DBusMessageIter *dict, dbus_bool_t limited,
 					struct connman_service *service)
 {
@@ -2604,9 +2657,21 @@ static void append_properties(DBusMessageIter *dict, dbus_bool_t limited,
 						append_ethernet, service);
 		break;
 	case CONNMAN_SERVICE_TYPE_WIFI:
-	case CONNMAN_SERVICE_TYPE_ETHERNET:
+		if (service->network) {
+			connman_dbus_dict_append_array(dict, "BSS",
+											DBUS_TYPE_DICT_ENTRY,
+											append_bsses,
+											connman_network_get_bss_table(service->network));
+		}
 	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+		if (service->network) {
+			str = connman_network_get_address(service->network);
+			if (str)
+				connman_dbus_dict_append_basic(dict, "Address",
+												DBUS_TYPE_STRING, &str);
+		}
 	case CONNMAN_SERVICE_TYPE_GADGET:
+	case CONNMAN_SERVICE_TYPE_ETHERNET:
 		connman_dbus_dict_append_dict(dict, "Ethernet",
 						append_ethernet, service);
 		break;
@@ -3517,6 +3582,10 @@ static void do_auto_connect(struct connman_service *service,
 	 */
 	if (service->type != CONNMAN_SERVICE_TYPE_VPN)
 		__connman_service_auto_connect(reason);
+	/* Only user interaction should get VPN connected in failure state. */
+	else if (service->state == CONNMAN_SERVICE_STATE_FAILURE &&
+				reason != CONNMAN_SERVICE_CONNECT_REASON_USER)
+		return;
 
 	vpn_auto_connect();
 }
@@ -5922,14 +5991,27 @@ static int service_update_preferred_order(struct connman_service *default_servic
 		struct connman_service *new_service,
 		enum connman_service_state new_state)
 {
-	if (!default_service || default_service == new_service)
+	unsigned int *tech_array;
+	int i;
+
+	if (!default_service || default_service == new_service ||
+			default_service->state != new_state)
 		return 0;
 
-	if (service_compare_preferred(default_service, new_service) > 0) {
-		switch_default_service(default_service,
-				new_service);
-		__connman_connection_update_gateway();
-		return 0;
+	tech_array = connman_setting_get_uint_list("PreferredTechnologies");
+	if (tech_array) {
+
+		for (i = 0; tech_array[i] != 0; i += 1) {
+			if (default_service->type == tech_array[i])
+				return -EALREADY;
+
+			if (new_service->type == tech_array[i]) {
+				switch_default_service(default_service,
+						new_service);
+				__connman_connection_update_gateway();
+				return 0;
+			}
+		}
 	}
 
 	return -EALREADY;
@@ -7255,6 +7337,11 @@ struct connman_service *__connman_service_lookup_from_index(int index)
 	}
 
 	return NULL;
+}
+
+struct connman_service *__connman_service_lookup_from_ident(const char *identifier)
+{
+	return lookup_by_identifier(identifier);
 }
 
 const char *connman_service_get_identifier(struct connman_service *service)

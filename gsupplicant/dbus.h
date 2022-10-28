@@ -20,6 +20,7 @@
  */
 
 #include <dbus/dbus.h>
+#include <stdbool.h>
 
 #define SUPPLICANT_SERVICE	"fi.w1.wpa_supplicant1"
 #define SUPPLICANT_INTERFACE	"fi.w1.wpa_supplicant1"
@@ -136,3 +137,12 @@ supplicant_dbus_dict_append_array(DBusMessageIter *dict,
 						function, user_data);
 	dbus_message_iter_close_container(dict, &entry);
 }
+
+/**
+ * Usage: dbus_message_get_args_from_array_of_sv(iter,
+ *           DBUS_TYPE_STRING, "property_name", &property_value, bool_is_manadatory
+ *           ... ,
+ *           DBUS_TYPE_INVALID);
+ * Only basic types are supported - no strings, containers, dict entries.
+ */
+bool dbus_message_get_args_from_array_of_sv(DBusMessageIter *iter, int first_arg_type, ...);

@@ -161,6 +161,28 @@ GKeyFile *__connman_storage_load_provider_config(const char *ident)
 	return keyfile;
 }
 
+GKeyFile *__connman_storage_open_service(const char *service_id)
+{
+	gchar *pathname;
+	GKeyFile *keyfile = NULL;
+
+	pathname = g_strdup_printf("%s/%s/%s", STORAGEDIR, service_id, SETTINGS);
+	if (!pathname)
+		return NULL;
+
+	keyfile =  storage_load(pathname);
+	if (keyfile) {
+		g_free(pathname);
+		return keyfile;
+	}
+
+	g_free(pathname);
+
+	keyfile = g_key_file_new();
+
+	return keyfile;
+}
+
 gchar **connman_storage_get_services(void)
 {
 	struct dirent *d;
@@ -263,6 +285,14 @@ int __connman_storage_save_service(GKeyFile *keyfile, const char *service_id)
 	return ret;
 }
 
+static bool is_file_exists(const char *path)
+{
+    if (access(path, F_OK) == -1)
+        return false;
+
+    return true;
+}
+
 static bool remove_file(const char *service_id, const char *file)
 {
 	gchar *pathname;
@@ -273,7 +303,12 @@ static bool remove_file(const char *service_id, const char *file)
 		return false;
 
 	if (!g_file_test(pathname, G_FILE_TEST_EXISTS)) {
-		ret = true;
+		if (!is_file_exists(pathname)) {
+			ret = true;
+		} else {
+			unlink(pathname);
+			ret = true;
+		}
 	} else if (g_file_test(pathname, G_FILE_TEST_IS_REGULAR)) {
 		unlink(pathname);
 		ret = true;
@@ -451,4 +486,128 @@ gchar **__connman_storage_get_providers(void)
 	g_slist_free(list);
 
 	return providers;
+}
+
+gchar **__connman_storage_get_p2p_persistents(void)
+{
+	GSList *list = NULL;
+	int num = 0, i = 0;
+	struct dirent *d;
+	gchar *str;
+	DIR *dir;
+	struct stat buf;
+	int ret;
+	char **persistents;
+	GSList *iter;
+
+	dir = opendir(STORAGEDIR);
+	if (dir == NULL)
+		return NULL;
+
+	while ((d = readdir(dir))) {
+		if (strcmp(d->d_name, ".") == 0 ||
+				strcmp(d->d_name, "..") == 0 ||
+				strncmp(d->d_name, "p2p_persistent_", 15) != 0)
+			continue;
+
+		if (d->d_type == DT_DIR) {
+			str = g_strdup_printf("%s/%s/settings", STORAGEDIR,
+					d->d_name);
+			ret = stat(str, &buf);
+			g_free(str);
+			if (ret < 0)
+				continue;
+			list = g_slist_prepend(list, g_strdup(d->d_name));
+			num += 1;
+		}
+	}
+
+	closedir(dir);
+
+	persistents = g_try_new0(char *, num + 1);
+	for (iter = list; iter != NULL; iter = g_slist_next(iter)) {
+		if (persistents != NULL)
+			persistents[i] = iter->data;
+		else
+			g_free(iter->data);
+		i += 1;
+	}
+	g_slist_free(list);
+
+	return persistents;
+}
+
+int __connman_storage_get_p2p_persistents_count(void)
+{
+	int i;
+	int cnt = 0;
+	gchar **persistents;
+
+	persistents = __connman_storage_get_p2p_persistents();
+
+	for (i = 0; persistents && persistents[i]; i++) {
+		DBG("loop : %s\n", persistents[i]);
+
+		if (strncmp(persistents[i], "p2p_persistent_", 15) != 0)
+			continue;
+
+		cnt++;
+	}
+
+	if (persistents != NULL)
+		g_strfreev(persistents);
+
+	return cnt;
+}
+
+void __connman_storage_del_unlinked_file(void)
+{
+	struct dirent *d, *sub_d;
+	gchar *str, *path;
+	DIR *dir, *sub_dir;
+
+	dir = opendir(STORAGEDIR);
+	if (dir == NULL)
+		return;
+
+	while ((d = readdir(dir))) {
+
+		if (strcmp(d->d_name, ".") == 0 ||
+				strcmp(d->d_name, "..") == 0 ||
+				strncmp(d->d_name, "p2p_", 4) == 0)
+			continue;
+
+		if (d->d_type == DT_DIR) {
+			path = g_strdup_printf("%s/%s/", STORAGEDIR,d->d_name);
+			sub_dir = opendir(path);
+			if (sub_dir == NULL) {
+				g_free(path);
+				continue;
+			}
+
+			while ((sub_d = readdir(sub_dir))) {
+				if (strcmp(sub_d->d_name, ".") == 0 ||
+						strcmp(sub_d->d_name, "..") == 0) {
+					continue;
+				}
+
+				if (strncmp(sub_d->d_name, "settings.", 9) == 0) {
+					str = g_strdup_printf("%s/%s/%s", STORAGEDIR, d->d_name, sub_d->d_name);
+					unlink(str);
+					g_free(str);
+				}
+			}
+			g_free(path);
+			closedir(sub_dir);
+		}
+		else {
+			if (strncmp(d->d_name, "settings.", 9) == 0) {
+				str = g_strdup_printf("%s/%s", STORAGEDIR, d->d_name);
+				unlink(str);
+				g_free(str);
+			}
+		}
+	}
+
+	closedir(dir);
 }

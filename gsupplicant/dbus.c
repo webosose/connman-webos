@@ -66,12 +66,14 @@ struct property_call_data {
 	DBusPendingCall *pending_call;
 	supplicant_dbus_property_function function;
 	void *user_data;
+	char *interface_path;
 };
 
 static void property_call_free(void *pointer)
 {
 	struct property_call_data *property_call = pointer;
 	property_calls = g_slist_remove(property_calls, property_call);
+	g_free(property_call->interface_path);
 	g_free(property_call);
 }
 
@@ -239,6 +241,7 @@ int supplicant_dbus_property_get_all(const char *path, const char *interface,
 	property_call->pending_call = call;
 	property_call->function = function;
 	property_call->user_data = user_data;
+	property_call->interface_path = NULL;
 
 	property_calls = g_slist_prepend(property_calls, property_call);
 
@@ -270,7 +273,7 @@ static void property_get_reply(DBusPendingCall *call, void *user_data)
 		dbus_message_iter_recurse(&iter, &variant);
 
 		if (property_call->function)
-			property_call->function(NULL, &variant,
+			property_call->function(property_call->interface_path, &variant,
 						property_call->user_data);
 	}
 done:
@@ -328,6 +331,7 @@ int supplicant_dbus_property_get(const char *path, const char *interface,
 	property_call->pending_call = call;
 	property_call->function = function;
 	property_call->user_data = user_data;
+	property_call->interface_path = g_strdup(path);
 
 	property_calls = g_slist_prepend(property_calls, property_call);
 
@@ -422,6 +426,7 @@ int supplicant_dbus_property_set(const char *path, const char *interface,
 	property_call->pending_call = call;
 	property_call->function = function;
 	property_call->user_data = user_data;
+	property_call->interface_path = NULL;
 
 	property_calls = g_slist_prepend(property_calls, property_call);
 
@@ -494,7 +499,7 @@ int supplicant_dbus_method_call(const char *path,
 	if (!connection)
 		return -EINVAL;
 
-	if (!path || !interface || !method)
+	if (!path || (strlen(path) == 0)|| !interface || !method)
 		return -EINVAL;
 
 	method_call = g_try_new0(struct method_call_data, 1);
@@ -647,4 +652,91 @@ void supplicant_dbus_property_append_array(DBusMessageIter *iter,
 	dbus_message_iter_close_container(&value, &array);
 
 	dbus_message_iter_close_container(iter, &value);
+}
+
+bool dbus_message_get_args_from_array_of_sv(DBusMessageIter *iter, int first_arg_type, ...)
+{
+	va_list var_args;
+	bool result = false;
+	int arg_type = first_arg_type;
+
+	va_start(var_args, first_arg_type);
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+		goto cleanup;
+
+	while(arg_type != DBUS_TYPE_INVALID)
+	{
+		const char* arg_name = NULL;
+		bool mandatory = false;
+		void* arg_location = NULL;
+		bool found = false;
+		DBusMessageIter dict;
+		DBusMessageIter value;
+
+		arg_name = va_arg(var_args, const char*);
+		arg_location = va_arg(var_args, void *);
+		mandatory = va_arg(var_args, int);
+
+		if (arg_name == NULL || arg_location == NULL){
+			goto cleanup;
+		}
+
+		/* Find the entry for the name in message */
+		dbus_message_iter_recurse(iter, &dict);
+		while (dbus_message_iter_get_arg_type(&dict) == DBUS_TYPE_DICT_ENTRY) {
+			DBusMessageIter entry;
+			const char *key;
+
+			dbus_message_iter_recurse(&dict, &entry);
+			if (dbus_message_iter_get_arg_type(&entry) != DBUS_TYPE_STRING)
+				goto cleanup;
+
+			dbus_message_iter_get_basic(&entry, &key);
+
+			if (g_strcmp0(arg_name, key) == 0)
+			{
+				/* found the key */
+				dbus_message_iter_next(&entry);
+				if (dbus_message_iter_get_arg_type(&entry) != DBUS_TYPE_VARIANT)
+					goto cleanup;
+
+				dbus_message_iter_recurse(&entry, &value);
+				found = true;
+				break;
+			}
+			dbus_message_iter_next(&dict);
+		}
+
+		if (found)
+		{
+			/* Parse the value */
+			if (arg_type != dbus_message_iter_get_arg_type(&value))
+			{
+				goto cleanup;
+			}
+
+			if (dbus_type_is_basic(arg_type))
+			{
+				dbus_message_iter_get_basic(&value, arg_location);
+			}
+			else
+			{
+				// Unsupported type
+				goto cleanup;
+			}
+		}
+		else if (mandatory)
+		{
+			goto cleanup;
+		}
+
+        /* Move to next entry */
+		arg_type = va_arg(var_args, int);
+	}
+
+	result = true;
+cleanup:
+	va_end(var_args);
+	return result;
 }
