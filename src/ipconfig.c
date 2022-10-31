@@ -1896,7 +1896,7 @@ int __connman_ipconfig_ipv6_set_privacy(struct connman_ipconfig *ipconfig,
 }
 
 void __connman_ipconfig_append_ipv4(struct connman_ipconfig *ipconfig,
-							DBusMessageIter *iter)
+							DBusMessageIter *iter, struct connman_service *service)
 {
 	struct connman_ipaddress *append_addr = NULL;
 	const char *str;

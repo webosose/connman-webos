@@ -394,7 +394,7 @@ const char *__connman_ipconfig_type2string(enum connman_ipconfig_type type);
 enum connman_ipconfig_method __connman_ipconfig_string2method(const char *method);
 
 void __connman_ipconfig_append_ipv4(struct connman_ipconfig *ipconfig,
-							DBusMessageIter *iter);
+							DBusMessageIter *iter, struct connman_service *service);
 void __connman_ipconfig_append_ipv4config(struct connman_ipconfig *ipconfig,
 							DBusMessageIter *iter);
 void __connman_ipconfig_append_ipv6(struct connman_ipconfig *ipconfig,
@@ -750,6 +750,8 @@ int __connman_service_set_mdns(struct connman_service *service,
 
 void __connman_service_set_string(struct connman_service *service,
 					const char *key, const char *value);
+int __connman_service_online_check_failed(struct connman_service *service,
+					enum connman_ipconfig_type type);
 void __connman_service_online_check(struct connman_service *service,
 					enum connman_ipconfig_type type,
 					bool success);
