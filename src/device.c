@@ -1232,6 +1232,122 @@ void __connman_device_stop_scan(enum connman_service_type type)
 	}
 }
 
+static int device_start_wps(struct connman_device *device, const char *pin)
+{
+	if (!device->driver || !device->driver->start_wps)
+		return -EOPNOTSUPP;
+
+	if (device->powered == FALSE)
+	        return -ENOLINK;
+
+	__connman_device_disconnect(device);
+
+	return device->driver->start_wps(device, pin);
+}
+
+int __connman_device_request_start_wps(enum connman_service_type type, const char *pin)
+{
+	bool success = FALSE;
+	int last_err = -ENOSYS;
+	GSList *list;
+	int err;
+
+	switch (type) {
+	case CONNMAN_SERVICE_TYPE_UNKNOWN:
+	case CONNMAN_SERVICE_TYPE_SYSTEM:
+	case CONNMAN_SERVICE_TYPE_ETHERNET:
+	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+	case CONNMAN_SERVICE_TYPE_CELLULAR:
+	case CONNMAN_SERVICE_TYPE_GPS:
+	case CONNMAN_SERVICE_TYPE_VPN:
+	case CONNMAN_SERVICE_TYPE_GADGET:
+		return -EOPNOTSUPP;
+	case CONNMAN_SERVICE_TYPE_WIFI:
+		break;
+	}
+
+	for (list = device_list; list != NULL; list = list->next) {
+		struct connman_device *device = list->data;
+		enum connman_service_type service_type =
+			__connman_device_get_service_type(device);
+
+		if (service_type != CONNMAN_SERVICE_TYPE_UNKNOWN &&
+				service_type != type) {
+			continue;
+		}
+
+		err = device_start_wps(device, pin);
+		if (err == 0) {
+			success = TRUE;
+		} else {
+			last_err = err;
+			DBG("device %p err %d", device, err);
+		}
+	}
+
+	if (success == TRUE)
+		return 0;
+
+	return last_err;
+}
+
+static int device_cancel_wps(struct connman_device *device)
+{
+	if (!device->driver || !device->driver->cancel_wps)
+		return -EOPNOTSUPP;
+
+	if (device->powered == FALSE)
+		return -ENOLINK;
+
+	return device->driver->cancel_wps(device);
+}
+
+int __connman_device_request_cancel_wps(enum connman_service_type type)
+{
+	bool success = FALSE;
+	int last_err = -ENOSYS;
+	GSList *list;
+	int err;
+
+	switch (type) {
+	case CONNMAN_SERVICE_TYPE_UNKNOWN:
+	case CONNMAN_SERVICE_TYPE_SYSTEM:
+	case CONNMAN_SERVICE_TYPE_ETHERNET:
+	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+	case CONNMAN_SERVICE_TYPE_CELLULAR:
+	case CONNMAN_SERVICE_TYPE_GPS:
+	case CONNMAN_SERVICE_TYPE_VPN:
+	case CONNMAN_SERVICE_TYPE_GADGET:
+		return -EOPNOTSUPP;
+	case CONNMAN_SERVICE_TYPE_WIFI:
+		break;
+	}
+
+	for (list = device_list; list != NULL; list = list->next) {
+		struct connman_device *device = list->data;
+		enum connman_service_type service_type =
+			__connman_device_get_service_type(device);
+
+		if (service_type != CONNMAN_SERVICE_TYPE_UNKNOWN &&
+			service_type != type) {
+			continue;
+		}
+
+		err = device_cancel_wps(device);
+		if (err == 0) {
+			success = TRUE;
+		} else {
+			last_err = err;
+			DBG("device %p err %d", device, err);
+		}
+	}
+
+	if (success == TRUE)
+		return 0;
+
+	return last_err;
+}
+
 static int device_cancel_p2p(struct connman_device *device)
 {
 	if (!device->driver || !device->driver->cancel_p2p)

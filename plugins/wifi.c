@@ -750,7 +750,7 @@ static int tech_set_p2p_go(DBusMessage *msg, struct connman_technology *technolo
 
 		info->wifi = wifi;
 		info->technology = technology;
-
+		
 		if (identifier || passphrase) {
 			snprintf(p2p_ssid, P2P_MAX_SSID, "%s%s", P2P_WILDCARD_SSID, identifier);
 			info->ssid = ssid_ap_init(p2p_ssid, passphrase);
@@ -762,7 +762,6 @@ static int tech_set_p2p_go(DBusMessage *msg, struct connman_technology *technolo
 			err = g_supplicant_interface_p2p_group_add(iface, NULL,
 					NULL, info);
 		}
-
 		group_msg = dbus_message_ref(msg);
 		create_group_flag = true;
 	}
@@ -5520,7 +5519,6 @@ static void p2p_group_started(GSupplicantGroup *group)
 
 	if (!wifi)
 		return;
-
 	const char* bssid_no_colon = g_supplicant_group_get_bssid_no_colon(group);
 	const char *ssid = g_supplicant_group_get_ssid(group);
 	const char *passphrase = g_supplicant_group_get_passphrase(group);
@@ -5568,7 +5566,6 @@ static void p2p_group_started(GSupplicantGroup *group)
 		if (create_group_flag)
 			__connman_p2p_go_set_enabled();
 	}
-
 	int freq = g_supplicant_group_get_frequency(group);
 	bool persistent = g_supplicant_group_get_persistent(group);
 
@@ -6319,6 +6316,8 @@ static struct connman_technology_driver tech_driver = {
 static int wifi_init(void)
 {
 	int err;
+
+	connection = connman_dbus_get_connection();
 
 	err = connman_network_driver_register(&network_driver);
 	if (err < 0)
