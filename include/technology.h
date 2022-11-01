@@ -39,6 +39,9 @@ struct connman_technology;
 
 int connman_technology_tethering_notify(struct connman_technology *technology,
 							bool enabled);
+void connman_technology_interface_changed(struct connman_technology *technology);
+int connman_technology_add_station(enum connman_service_type type, const char *mac);
+int connman_technology_remove_station(char *mac);
 int connman_technology_set_regdom(const char *alpha2);
 void connman_technology_regdom_notify(struct connman_technology *technology,
 							const char *alpha2);
@@ -58,10 +61,16 @@ bool connman_technology_get_enable_p2p_listen(struct connman_technology *technol
 bool connman_technology_get_p2p_listen(struct connman_technology *technology);
 void connman_technology_set_p2p_listen(struct connman_technology *technology,
 							bool enabled);
+void __connman_technology_p2p_invitation_result(struct connman_technology *technology,
+							int status);
+void connman_technology_set_p2p_listen_params(struct connman_technology *technology,
+						int period, int interval);
 unsigned int connman_technology_get_p2p_listen_channel(struct connman_technology *technology);
 void connman_technology_set_p2p_listen_channel(struct connman_technology *technology,
 									unsigned int listen_channel);
 void connman_technology_wps_failed_notify(struct connman_technology *technology);
+bool connman_technology_get_p2p_persistent(struct connman_technology *technology);
+void connman_technology_set_p2p_persistent(struct connman_technology *technology, bool enabled);
 
 struct connman_technology_driver {
 	const char *name;

@@ -394,7 +394,7 @@ const char *__connman_ipconfig_type2string(enum connman_ipconfig_type type);
 enum connman_ipconfig_method __connman_ipconfig_string2method(const char *method);
 
 void __connman_ipconfig_append_ipv4(struct connman_ipconfig *ipconfig,
-							DBusMessageIter *iter);
+							DBusMessageIter *iter, struct connman_service *service);
 void __connman_ipconfig_append_ipv4config(struct connman_ipconfig *ipconfig,
 							DBusMessageIter *iter);
 void __connman_ipconfig_append_ipv6(struct connman_ipconfig *ipconfig,
@@ -471,6 +471,7 @@ typedef void (* dhcpv6_cb) (struct connman_network *network,
 typedef void (* dhcp_cb) (struct connman_ipconfig *ipconfig,
 			struct connman_network *opt_network,
 			bool success, gpointer data);
+char *__connman_dhcp_get_client_address(struct connman_ipconfig *ipconfig);
 char *__connman_dhcp_get_server_address(struct connman_ipconfig *ipconfig);
 int __connman_dhcp_start(struct connman_ipconfig *ipconfig,
 			struct connman_network *network, dhcp_cb callback,
@@ -509,6 +510,8 @@ int __connman_connection_gateway_add(struct connman_service *service,
 					const char *peer);
 void __connman_connection_gateway_remove(struct connman_service *service,
 					enum connman_ipconfig_type type);
+char *find_service_gateway(struct connman_service *service);
+
 int __connman_connection_get_vpn_index(int phy_index);
 int __connman_connection_get_vpn_phy_index(int vpn_index);
 
@@ -577,6 +580,8 @@ enum connman_service_type __connman_device_get_service_type(struct connman_devic
 struct connman_device *__connman_device_find_device(enum connman_service_type type);
 int __connman_device_request_scan(enum connman_service_type type);
 int __connman_device_request_scan_full(enum connman_service_type type);
+int __connman_device_request_start_wps(enum connman_service_type type, const char *pin);
+int __connman_device_request_cancel_wps(enum connman_service_type type);
 int __connman_device_request_cancel_p2p(enum connman_service_type type);
 int __connman_device_request_hidden_scan(struct connman_device *device,
 				const char *ssid, unsigned int ssid_len,
@@ -750,6 +755,8 @@ int __connman_service_set_mdns(struct connman_service *service,
 
 void __connman_service_set_string(struct connman_service *service,
 					const char *key, const char *value);
+int __connman_service_online_check_failed(struct connman_service *service,
+					enum connman_ipconfig_type type);
 void __connman_service_online_check(struct connman_service *service,
 					enum connman_ipconfig_type type,
 					bool success);
@@ -768,6 +775,7 @@ int __connman_service_indicate_default(struct connman_service *service);
 int __connman_service_connect(struct connman_service *service,
 			enum connman_service_connect_reason reason);
 int __connman_service_disconnect(struct connman_service *service);
+int __connman_service_disconnect_all(void);
 void __connman_service_set_active_session(bool enable, GSList *list);
 void __connman_service_auto_connect(enum connman_service_connect_reason reason);
 bool __connman_service_remove(struct connman_service *service);

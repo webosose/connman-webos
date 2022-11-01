@@ -836,7 +836,7 @@ static void append_ipconfig_ipv4(DBusMessageIter *iter, void *user_data)
 	if (!ipconfig_ipv4)
 		return;
 
-	__connman_ipconfig_append_ipv4(ipconfig_ipv4, iter);
+	__connman_ipconfig_append_ipv4(ipconfig_ipv4, iter , service);
 }
 
 static void append_ipconfig_ipv6(DBusMessageIter *iter, void *user_data)

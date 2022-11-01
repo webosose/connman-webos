@@ -111,7 +111,7 @@ static void stop_dhcp_server(struct connman_peer *peer)
 	peer->dhcp_server = NULL;
 
 	if (peer->ip_pool)
-		__connman_ippool_free(peer->ip_pool);
+		__connman_ippool_unref(peer->ip_pool);
 	peer->ip_pool = NULL;
 	peer->lease_ip = 0;
 }
@@ -124,13 +124,30 @@ static void dhcp_server_debug(const char *str, void *data)
 static void lease_added(unsigned char *mac, uint32_t ip)
 {
 	GList *list, *start;
+	char *mac_no_colon = __connman_util_mac_binary_to_string_no_colon(mac);
+
+	if (!mac_no_colon){
+		connman_info("Failed to get mac");
+		return;
+	}
+
+	const char* identifier = g_supplicant_peer_identifier_from_intf_address(mac_no_colon);
+	g_free(mac_no_colon);
+
+	if (!identifier)
+		return;
 
 	start = list = g_hash_table_get_values(peers_table);
 	for (; list; list = list->next) {
 		struct connman_peer *temp = list->data;
 
-		if (!memcmp(temp->iface_address, mac, ETH_ALEN)) {
+		if (!g_strcmp0(temp->identifier, identifier)) {
 			temp->lease_ip = ip;
+			if (temp->is_static_ip) {
+				temp->is_static_ip = false;
+				if (temp->clientCb)
+					temp->clientCb();
+			}
 			settings_changed(temp);
 			break;
 		}
@@ -169,7 +186,8 @@ static int start_dhcp_server(struct connman_peer *peer)
 	else
 		index = connman_device_get_index(peer->device);
 
-	peer->ip_pool = __connman_ippool_create(index, 2, 1, NULL, NULL);
+	peer->ip_pool = __connman_ippool_create_with_block(index, 2, 252,
+						P2P_DEFAULT_BLOCK, NULL, NULL);
 	if (!peer->ip_pool)
 		goto error;
 
@@ -237,6 +255,7 @@ static void peer_free(gpointer data)
 	}
 
 	if (peer->ipconfig) {
+		__connman_dhcp_stop(peer->ipconfig);
 		__connman_ipconfig_set_ops(peer->ipconfig, NULL);
 		__connman_ipconfig_set_data(peer->ipconfig, NULL);
 		__connman_ipconfig_unref(peer->ipconfig);
@@ -255,7 +274,7 @@ static void peer_free(gpointer data)
 
 	g_free(peer->identifier);
 	g_free(peer->name);
-
+	g_free(peer->device_address);
 	g_free(peer);
 }
 
@@ -349,6 +368,10 @@ static void append_ipv4(DBusMessageIter *iter, void *user_data)
 
 		local = __connman_ippool_get_gateway(peer->ip_pool);
 		remote = trans;
+		if (peer->lease_ip == 0)
+			peer->is_dhcp_ip = false;
+		else
+			peer->is_dhcp_ip = true;
 	} else if (peer->ipconfig) {
 		local = __connman_ipconfig_get_local(peer->ipconfig);
 
@@ -365,6 +388,10 @@ static void append_ipv4(DBusMessageIter *iter, void *user_data)
 						DBUS_TYPE_STRING, &local);
 	connman_dbus_dict_append_basic(iter, "Remote",
 						DBUS_TYPE_STRING, &remote);
+
+	g_free(peer->dhcp_ip);
+	peer->dhcp_ip = g_strdup(remote);
+
 	if (dhcp)
 		g_free(dhcp);
 }
@@ -412,6 +439,27 @@ static void append_peer_services(DBusMessageIter *iter, void *user_data)
 	dbus_message_iter_close_container(iter, &container);
 }
 
+static void append_peer(DBusMessageIter *dict, void *user_data)
+{
+	dbus_bool_t val;
+	struct connman_peer *peer = user_data;
+
+	connman_dbus_dict_append_basic(dict, "DeviceAddress", DBUS_TYPE_STRING,
+					&peer->device_address);
+
+	val = peer->is_groupOwner;
+	connman_dbus_dict_append_basic(dict, "GroupOwner", DBUS_TYPE_BOOLEAN,
+					&val);
+
+	if (peer->config_methods)
+		connman_dbus_dict_append_basic(dict, "ConfigMethod", DBUS_TYPE_UINT16,
+					&peer->config_methods);
+
+	if (peer->pri_dev_type)
+		connman_dbus_dict_append_basic(dict, "DeviceType", DBUS_TYPE_STRING,
+					&peer->pri_dev_type);
+}
+
 static void append_properties(DBusMessageIter *iter, struct connman_peer *peer)
 {
 	const char *state = state2string(peer->state);
@@ -419,14 +467,30 @@ static void append_properties(DBusMessageIter *iter, struct connman_peer *peer)
 
 	connman_dbus_dict_open(iter, &dict);
 
+	connman_dbus_dict_append_basic(&dict, "Type",
+					DBUS_TYPE_STRING, &peer->type);
 	connman_dbus_dict_append_basic(&dict, "State",
 					DBUS_TYPE_STRING, &state);
 	connman_dbus_dict_append_basic(&dict, "Name",
 					DBUS_TYPE_STRING, &peer->name);
+	connman_dbus_dict_append_basic(&dict, "Strength",
+					DBUS_TYPE_BYTE, &peer->strength);
+	connman_dbus_dict_append_dict(&dict, "P2P", append_peer, peer);
+
 	connman_dbus_dict_append_dict(&dict, "IPv4", append_ipv4, peer);
 	connman_dbus_dict_append_array(&dict, "Services",
 					DBUS_TYPE_DICT_ENTRY,
 					append_peer_services, peer);
+
+	if (is_connected(peer)) {
+		if (peer->is_static_ip)
+			connman_dbus_dict_append_basic(&dict, "IPAddress",
+				DBUS_TYPE_STRING, &peer->static_ip);
+		else if (peer->is_dhcp_ip)
+			connman_dbus_dict_append_basic(&dict, "IPAddress",
+				DBUS_TYPE_STRING, &peer->dhcp_ip);
+	}
+
 	connman_dbus_dict_close(iter, &dict);
 }
 

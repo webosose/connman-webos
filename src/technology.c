@@ -1956,6 +1956,44 @@ void connman_technology_wps_failed_notify(struct connman_technology *technology)
 		CONNMAN_TECHNOLOGY_INTERFACE, "WPSFailed",
 		DBUS_TYPE_INVALID);
 }
+
+static DBusMessage *start_wps(DBusConnection *conn, DBusMessage *msg, void *data)
+{
+	struct connman_technology *technology = data;
+	DBusMessageIter iter;
+	int err;
+	const char *pin;
+
+	DBG("technology %p request from %s", technology,
+		dbus_message_get_sender(msg));
+
+	if (dbus_message_iter_init(msg, &iter) == FALSE)
+		return __connman_error_invalid_arguments(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+		return __connman_error_invalid_arguments(msg);
+
+	dbus_message_iter_get_basic(&iter, &pin);
+
+	err = __connman_device_request_start_wps(technology->type, pin);
+	if (err < 0)
+		return __connman_error_failed(msg, -err);
+
+	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
+}
+
+static DBusMessage *cancel_wps(DBusConnection *conn, DBusMessage *msg, void *data)
+{
+	struct connman_technology *technology = data;
+	int err;
+
+	err = __connman_device_request_cancel_wps(technology->type);
+	if (err < 0)
+		return __connman_error_failed(msg, -err);
+
+	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
+}
+
 static DBusMessage *cancel_p2p(DBusConnection *conn, DBusMessage *msg, void *data)
 {
 	struct connman_technology *technology = data;
@@ -2064,6 +2102,10 @@ static const GDBusMethodTable technology_methods[] = {
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" }),
 			NULL, set_property) },
 	{ GDBUS_ASYNC_METHOD("Scan", NULL, NULL, scan) },
+	{ GDBUS_ASYNC_METHOD("StartWPS",
+			GDBUS_ARGS({ "pin", "s" }),
+			NULL, start_wps) },
+	{ GDBUS_METHOD("CancelWPS", NULL, NULL, cancel_wps) },
 	{ GDBUS_METHOD("CancelP2P", NULL, NULL, cancel_p2p) },
 	{ GDBUS_ASYNC_METHOD("GetInterfaceProperties",
 			GDBUS_ARGS({ "interface", "s" }),
@@ -2075,6 +2117,7 @@ static const GDBusMethodTable technology_methods[] = {
 static const GDBusSignalTable technology_signals[] = {
 	{ GDBUS_SIGNAL("PropertyChanged",
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
+	{ GDBUS_SIGNAL("WPSFailed", NULL) },
 	{ },
 };
 
