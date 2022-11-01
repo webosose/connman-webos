@@ -557,14 +557,16 @@ static int tether_update(struct tether_properties *tether)
 {
 	int ret;
 
-	if (tether->ssid_result == 0 && tether->passphrase_result == 0) {
+	if (tether->ssid_result == 0 && tether->passphrase_result == 0 &&
+			tether->freq_result == 0) {
 		ret = tether_set("wifi", tether->set_tethering);
 		g_free(tether);
 		return ret;
 	}
 
 	if (tether->ssid_result != -EINPROGRESS &&
-			tether->passphrase_result != -EINPROGRESS) {
+			tether->passphrase_result != -EINPROGRESS &&
+			tether->freq_result != -EINPROGRESS) {
 		g_free(tether);
 		return 0;
 	}
@@ -620,9 +622,9 @@ static int tether_set_freq_return(DBusMessageIter *iter, int errnum,
 	return tether_update(tether);
 }
 
-static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering)
+static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering, int freq)
 {
-	struct tether_properties *tether = g_new(struct tether_properties, 1);
+	struct tether_properties *tether = g_new0(struct tether_properties, 1);
 
 	tether->set_tethering = set_tethering;
 
@@ -638,9 +640,17 @@ static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering)
 			tether_set_passphrase_return, tether,
 			"TetheringPassphrase", DBUS_TYPE_STRING, &passphrase);
 
+	if (freq > 0) {
+		tether->freq_result =__connmanctl_dbus_set_property(connection,
+				"/net/connman/technology/wifi",
+				"net.connman.Technology",
+				tether_set_freq_return, tether,
+				"TetheringFreq", DBUS_TYPE_INT32, &freq);
+	}
 
 	if (tether->ssid_result != -EINPROGRESS &&
-			tether->passphrase_result != -EINPROGRESS) {
+			tether->passphrase_result != -EINPROGRESS &&
+			tether->freq_result != -EINPROGRESS) {
 		g_free(tether);
 		return -ENXIO;
 	}
@@ -655,9 +665,6 @@ static int cmd_tether(char *args[], int num, struct connman_option *options)
 
 	if (num < 3)
 		return -EINVAL;
-
-	passphrase = args[num - 1];
-	ssid = args[num - 2];
 
 	set_tethering = parse_boolean(args[2]);
 
@@ -682,7 +689,7 @@ static int cmd_tether(char *args[], int num, struct connman_option *options)
 		ssid = args[num - 2];
 
 		if (num > 3)
-			return tether_set_ssid(ssid, passphrase, set_tethering);
+			return tether_set_ssid(ssid, passphrase, set_tethering, freq);
 	}
 
 	if (num > 3)
@@ -2793,7 +2800,7 @@ static const struct {
 	  "Disables given technology or offline mode",
 	  lookup_technology_offline },
 	{ "tether", "<technology> on|off\n"
-	            "            wifi [on|off] <ssid> <passphrase> ",
+	            "            wifi [on|off] <ssid> <passphrase> [<freq>] ",
 	                                  NULL,            cmd_tether,
 	  "Enable, disable tethering, set SSID and passphrase for wifi",
 	  lookup_tether },

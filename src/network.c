@@ -489,8 +489,6 @@ static void dhcp_callback(struct connman_ipconfig *ipconfig,
 			struct connman_network *network,
 			bool success, gpointer data)
 {
-	connman_info("DHCP success %d",success);
-
 	network->connecting = false;
 
 	if (success)
@@ -1248,7 +1246,6 @@ static void network_destruct(struct connman_network *network)
 	g_free(network->wifi.private_key_passphrase);
 	g_free(network->wifi.phase2_auth);
 	g_free(network->wifi.pin_wps);
-	g_hash_table_destroy(network->wifi.bss);
 
 	g_free(network->path);
 	g_free(network->group);
@@ -1256,11 +1253,9 @@ static void network_destruct(struct connman_network *network)
 	g_free(network->name);
 	g_free(network->identifier);
 	acd_host_free(network->acd_host);
-	g_free(network->address);
 
 	network->device = NULL;
 
-	network->wifi.bss = NULL;
 	g_free(network);
 }
 
@@ -1295,7 +1290,6 @@ struct connman_network *connman_network_create(const char *identifier,
 	network->identifier = ident;
 	network->acd_host = NULL;
 	network->ipv4ll_timeout = 0;
-	network->wifi.bss   = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 
 	network_list = g_slist_prepend(network_list, network);
 
@@ -1819,8 +1813,6 @@ int __connman_network_connect(struct connman_network *network)
 
 	if (!network->device)
 		return -ENODEV;
-
-	__connman_device_disconnect(network->device);
 
 	network->connecting = true;
 

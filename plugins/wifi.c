@@ -750,10 +750,7 @@ static int tech_set_p2p_go(DBusMessage *msg, struct connman_technology *technolo
 
 		info->wifi = wifi;
 		info->technology = technology;
-		
-		group_msg = dbus_message_ref(msg);
-		DBG("piyush log connman group_msg :   %s", group_msg);
-		
+
 		if (identifier || passphrase) {
 			snprintf(p2p_ssid, P2P_MAX_SSID, "%s%s", P2P_WILDCARD_SSID, identifier);
 			info->ssid = ssid_ap_init(p2p_ssid, passphrase);
@@ -766,6 +763,7 @@ static int tech_set_p2p_go(DBusMessage *msg, struct connman_technology *technolo
 					NULL, info);
 		}
 
+		group_msg = dbus_message_ref(msg);
 		create_group_flag = true;
 	}
 
@@ -5509,7 +5507,6 @@ static void assoc_status_code(GSupplicantInterface *interface, int status_code)
 
 static void p2p_group_started(GSupplicantGroup *group)
 {
-	DBG("piyush 1 log connman group_msg :  ");
 	struct wifi_data *wifi;
 	GSList *item;
 	GSupplicantP2PPersistentGroup *persistent_group;
@@ -5523,7 +5520,7 @@ static void p2p_group_started(GSupplicantGroup *group)
 
 	if (!wifi)
 		return;
-	DBG("piyush 2 log connman group_msg :  ");
+
 	const char* bssid_no_colon = g_supplicant_group_get_bssid_no_colon(group);
 	const char *ssid = g_supplicant_group_get_ssid(group);
 	const char *passphrase = g_supplicant_group_get_passphrase(group);
@@ -5536,7 +5533,6 @@ static void p2p_group_started(GSupplicantGroup *group)
 
 	/* persistent check */
 	item = wifi->persistent_groups;
-		DBG("piyush 3 log connman group_msg :  ");
 	while(item != NULL) {
 		persistent_group = item->data;
 
@@ -5562,7 +5558,6 @@ static void p2p_group_started(GSupplicantGroup *group)
 
 		item = g_slist_next(item);
 	}
-		DBG("piyush 4 log connman group_msg :  ");
 	bool is_group_owner = false;
 	if (g_supplicant_group_get_role(group) == G_SUPPLICANT_GROUP_ROLE_GO) {
 		is_group_owner = true;
@@ -5573,7 +5568,7 @@ static void p2p_group_started(GSupplicantGroup *group)
 		if (create_group_flag)
 			__connman_p2p_go_set_enabled();
 	}
-	DBG("piyush 5 log connman group_msg :  ");
+
 	int freq = g_supplicant_group_get_frequency(group);
 	bool persistent = g_supplicant_group_get_persistent(group);
 
@@ -5581,7 +5576,7 @@ static void p2p_group_started(GSupplicantGroup *group)
 					is_group_owner, persistent, go_path, create_group_flag, freq);
 
 	const char *connman_group_path = __connman_group_get_path(connman_group);
-	DBG("piyush 6 log connman group_msg :  ");
+
 	if (is_group_owner) {
 		p2p_go_identifier = g_strdup(__connman_group_get_identifier(connman_group));
 	} else {
@@ -5605,10 +5600,8 @@ static void p2p_group_started(GSupplicantGroup *group)
 			peer_changed(supplicant_peer, G_SUPPLICANT_PEER_GROUP_JOINED);
 		}
 	}
-		DBG("piyush 7 log connman group_msg :  ");
-	DBG("piyush 1new log connman group_msg :   %c", group_msg);
+
 	if (is_group_owner && create_group_flag) {
-		DBG("piyush 8 log connman group_msg :  ");
 		g_dbus_send_reply(connection, group_msg,
 						DBUS_TYPE_OBJECT_PATH, &connman_group_path,
 						DBUS_TYPE_INVALID);
@@ -6326,8 +6319,6 @@ static struct connman_technology_driver tech_driver = {
 static int wifi_init(void)
 {
 	int err;
-
-	connection = connman_dbus_get_connection();
 
 	err = connman_network_driver_register(&network_driver);
 	if (err < 0)

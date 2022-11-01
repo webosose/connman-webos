@@ -1115,16 +1115,6 @@ static void remove_group(gpointer data)
 	g_free(group);
 }
 
-static void callback_wps_state(GSupplicantInterface *interface)
-{
-	if (callbacks_pointer == NULL)
-		return;
-
-	if (callbacks_pointer->wps_state == NULL)
-		return;
-
-	callbacks_pointer->wps_state(interface);
-}
 
 static void remove_interface(gpointer data)
 {
@@ -3625,58 +3615,6 @@ static void signal_wps_event(const char *path, DBusMessageIter *iter)
 	dbus_message_iter_next(iter);
 
 	supplicant_dbus_property_foreach(iter, wps_event_args, interface);
-
-	callback_wps_state(interface);
-}
-
-static void signal_station_connected(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-	const char *sta_mac = NULL;
-
-	SUPPLICANT_DBG("path %s %s", path, SUPPLICANT_PATH);
-
-	if (callbacks_pointer->station_added == NULL)
-		return;
-
-	if (g_strcmp0(path, "/") == 0)
-		return;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (interface == NULL)
-		return;
-
-	dbus_message_iter_get_basic(iter, &sta_mac);
-	if (sta_mac == NULL)
-		return;
-
-	SUPPLICANT_DBG("New station %s connected", sta_mac);
-	callbacks_pointer->station_added(sta_mac);
-}
-
-static void signal_station_disconnected(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-	const char *sta_mac = NULL;
-
-	SUPPLICANT_DBG("path %s %s", path, SUPPLICANT_PATH);
-
-	if (callbacks_pointer->station_removed == NULL)
-		return;
-
-	if (g_strcmp0(path, "/") == 0)
-		return;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (interface == NULL)
-		return;
-
-	dbus_message_iter_get_basic(iter, &sta_mac);
-	if (sta_mac == NULL)
-		return;
-
-	SUPPLICANT_DBG("Station %s disconnected", sta_mac);
-	callbacks_pointer->station_removed(sta_mac);
 }
 
 static void create_peer_identifier(GSupplicantPeer *peer)
@@ -5010,62 +4948,6 @@ static void interface_p2p_prov_disc_request_or_response(DBusMessageIter *iter,
 		                                     (void *)pin);
 	}
 }
-
-static void signal_prov_disc_requested_pbc(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (!interface)
-		return;
-
-	interface_p2p_prov_disc_request_or_response(iter, interface, true, "pbc");
-}
-
-static void signal_prov_disc_requested_enter_pin(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (!interface)
-		return;
-
-	interface_p2p_prov_disc_request_or_response(iter, interface, true, "enter_pin");
-}
-
-static void signal_prov_disc_requested_disp_pin(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (!interface)
-		return;
-
-	interface_p2p_prov_disc_request_or_response(iter, interface, true, "disp_pin");
-}
-
-static void signal_prov_disc_response_enter_pin(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (!interface)
-		return;
-
-	interface_p2p_prov_disc_request_or_response(iter, interface, false, "enter_pin");
-}
-
-static void signal_prov_disc_response_disp_pin(const char *path, DBusMessageIter *iter)
-{
-	GSupplicantInterface *interface;
-
-	interface = g_hash_table_lookup(interface_table, path);
-	if (!interface)
-		return;
-
-	interface_p2p_prov_disc_request_or_response(iter, interface, false, "disp_pin");
-}
-
 static void interface_p2p_prov_disc_fail(DBusMessageIter *iter, void *user_data)
 {
 	GSupplicantInterface *interface = user_data;
@@ -5907,9 +5789,6 @@ static struct {
 	{ SUPPLICANT_INTERFACE ".Interface", "StaAuthorized",     signal_sta_authorized    },
 	{ SUPPLICANT_INTERFACE ".Interface", "StaDeauthorized",   signal_sta_deauthorized  },
 
-	{ SUPPLICANT_INTERFACE ".Interface", "StaAuthorized",     signal_station_connected   },
-	{ SUPPLICANT_INTERFACE ".Interface", "StaDeauthorized",   signal_station_disconnected },
-
 	{ SUPPLICANT_INTERFACE ".BSS", "PropertiesChanged", signal_bss_changed   },
 
 	{ SUPPLICANT_INTERFACE ".Interface.WPS", "Credentials", signal_wps_credentials },
@@ -5932,15 +5811,6 @@ static struct {
 
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "P2PSProvisionStart", signal_p2ps_prov_start	},
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "P2PSProvisionDone",	 signal_p2ps_prov_done	},
-
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryPBCRequest",	signal_prov_disc_requested_pbc },
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryRequestEnterPin",	signal_prov_disc_requested_enter_pin },
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryRequestDisplayPin",	signal_prov_disc_requested_disp_pin },
-
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryResponseEnterPin",	signal_prov_disc_response_enter_pin },
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryResponseDisplayPin",	signal_prov_disc_response_disp_pin },
-	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ProvisionDiscoveryFailure",	signal_prov_disc_fail },
-
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "InvitationResult", signal_invitation_result },
 	{ SUPPLICANT_INTERFACE ".Interface.P2PDevice", "InvitationReceived", signal_invitation_received	},
 	{ SUPPLICANT_INTERFACE ".Group", "PeerJoined", signal_group_peer_joined },
@@ -6193,7 +6063,7 @@ static void p2p_device_config_result(const char *error,
 	dbus_free(config);
 }
 
-int dev_type_str2bin(const char *type, unsigned char dev_type[8])
+static int dev_type_str2bin(const char *type, unsigned char dev_type[8])
 {
 	int length, pos, end;
 	char b[3] = {};

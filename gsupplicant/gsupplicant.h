@@ -404,11 +404,6 @@ typedef void (*GSupplicantInterfaceCallback) (int result,
 					GSupplicantInterface *interface,
 							void *user_data);
 
-typedef void (*GSupplicantInterfaceBcmCallback) (int result,
-					GSupplicantInterface *interface,
-						const char *cmd_response,
-							void *user_data);
-int dev_type_str2bin(const char *type, unsigned char dev_type[8]);
 void g_supplicant_interface_cancel(GSupplicantInterface *interface);
 
 int g_supplicant_interface_create(const char *ifname, const char *driver,
@@ -468,56 +463,8 @@ int g_supplicant_interface_p2p_wps_start(GSupplicantInterface *interface,
 													GSupplicantP2PWPSParams *wps_data,
 													GSupplicantInterfaceCallback callback,
 													void *user_data);
-
-int g_supplicant_interface_p2p_remove_all_persistent_groups(GSupplicantInterface *interface);
-int g_supplicant_interface_p2p_add_persistent_group(GSupplicantInterface *interface,
-										GSupplicantSSID *ssid, void *user_data);
-
-int g_supplicant_interface_p2p_sd_request(GSupplicantInterface *interface,
-				GSupplicantP2PSDParams *sd_data,
-				GSupplicantInterfaceCallbackWithData callback,
-				void *user_data);
-
-int g_supplicant_interface_p2p_sd_cancel_request(GSupplicantInterface *interface,
-				dbus_uint64_t request_id,
-				GSupplicantInterfaceCallback callback,
-				void *user_data);
-
-int g_supplicant_interface_p2p_replace_service(GSupplicantInterface *interface,
-				GSupplicantInterfaceCallback callback,
-				GSupplicantP2PServiceParams *p2p_service_params,
-				void *user_data);
-
-int g_supplicant_interface_p2p_asp_provision_request(GSupplicantInterface *interface,
-										  GSupplicantP2PASPProvisionRequestParams *sd_data,
-										  GSupplicantInterfaceCallback callback,
-										  void *user_data);
-
-int g_supplicant_interface_p2p_asp_provision_response(GSupplicantInterface *interface,
-                                                      GSupplicantP2PASPProvisionResponseParams *params,
-                                                      GSupplicantInterfaceCallback callback,
-                                                      void *user_data);
-
-int g_supplicant_interface_p2p_read_device_address(GSupplicantInterface *interface,
-                                                   GSupplicantInterfaceCallback callback, void *user_data);
-
-const unsigned char *g_supplicant_interface_p2p_get_device_address(GSupplicantInterface *interface);
-
-
 int g_supplicant_interface_p2p_del_service(GSupplicantInterface *interface,
 				GSupplicantP2PServiceParams *p2p_service_params);
-
-int g_supplicant_interface_p2p_reject(GSupplicantInterface *interface,
-					GSupplicantPeerParams *peer_params, GSupplicantInterfaceCallback callback,
-					void *user_data);
-
-int g_supplicant_interface_p2p_client_remove(GSupplicantInterface *interface,
-					GSupplicantInterfaceCallback callback,
-					char* peer_path);
-
-int g_supplicant_interface_p2p_cancel(GSupplicantInterface *interface,
-				GSupplicantInterfaceCallback callback, void *user_data);
-
 int g_supplicant_interface_p2p_flush(GSupplicantInterface *interface,
 				GSupplicantInterfaceCallback callback, void *user_data);
 int g_supplicant_interface_p2p_invite(GSupplicantInterface *interface,
@@ -539,10 +486,6 @@ int g_supplicant_interface_disconnect(GSupplicantInterface *interface,
 
 int g_supplicant_interface_set_bss_expiration_age(GSupplicantInterface *interface,
 					unsigned int bss_expiration_age);
-
-int g_supplicant_interface_wps_cancel(GSupplicantInterface *interface,
-					GSupplicantInterfaceCallback callback,
-							void *user_data);
 
 int g_supplicant_interface_set_apscan(GSupplicantInterface *interface,
 							unsigned int ap_scan);
@@ -629,18 +572,12 @@ dbus_uint16_t g_supplicant_bss_get_frequency(GSupplicantBss *bss);
 
 GSupplicantInterface *g_supplicant_peer_get_interface(GSupplicantPeer *peer);
 const char *g_supplicant_peer_get_path(GSupplicantPeer *peer);
-dbus_uint16_t g_supplicant_peer_get_config_methods(GSupplicantPeer *peer);
 const char *g_supplicant_peer_get_identifier(GSupplicantPeer *peer);
 const void *g_supplicant_peer_get_device_address(GSupplicantPeer *peer);
 const void *g_supplicant_peer_get_iface_address(GSupplicantPeer *peer);
-const char *g_supplicant_peer_get_ip_address(GSupplicantPeer *peer);
-
 const char *g_supplicant_peer_get_name(GSupplicantPeer *peer);
 const unsigned char *g_supplicant_peer_get_widi_ies(GSupplicantPeer *peer,
 								int *length);
-dbus_int32_t g_supplicant_peer_get_level(GSupplicantPeer *peer);
-const char *g_supplicant_peer_get_pri_dev_type(GSupplicantPeer *peer);
-int g_supplicant_peer_get_failure_status(GSupplicantPeer *peer);
 bool g_supplicant_peer_is_wps_pbc(GSupplicantPeer *peer);
 bool g_supplicant_peer_is_wps_pin(GSupplicantPeer *peer);
 bool g_supplicant_peer_is_in_a_group(GSupplicantPeer *peer);
@@ -653,26 +590,8 @@ const char *g_supplicant_peer_identifier_from_intf_address(const char* pintf_add
 const char *g_supplicant_peer_wfds_get_identifier(GSupplicantPeer *peer);
 int g_supplicant_peer_wfds_get_asp_services(GSupplicantPeer *peer, GSupplicantP2PService** services);
 const char *g_supplicant_peer_wfds_get_peer_name(GSupplicantPeer *peer);
-
-int g_supplicant_interface_bcm_private_cmd(GSupplicantInterface *interface,const char *driver_cmd,
-			GSupplicantInterfaceBcmCallback callback,void *user_data);
-
-GSupplicantInterface *g_supplicant_group_get_interface(GSupplicantGroup *group);
-GSupplicantInterface *g_supplicant_group_get_orig_interface(GSupplicantGroup *group);
-char *g_supplicant_group_get_object_path(GSupplicantGroup *group);
-char *g_supplicant_group_get_bssid_no_colon(GSupplicantGroup *group);
-GSupplicantGroup *g_supplicant_get_group(const char *path);
-GSupplicantP2PPersistentGroup* g_supplicant_interface_get_p2p_persistent_group(GSupplicantInterface *interface, GSupplicantGroup *group);
-unsigned int g_supplicant_network_get_keymgmt(GSupplicantNetwork *network);
-
-int g_supplicant_group_get_role(GSupplicantGroup *group);
 char *g_supplicant_group_get_ssid(GSupplicantGroup *group);
-char *g_supplicant_group_get_passphrase(GSupplicantGroup *group);
-int g_supplicant_group_get_frequency(GSupplicantGroup *group);
-bool g_supplicant_group_get_persistent(GSupplicantGroup *group);
-char *g_supplicant_group_get_ip_addr(GSupplicantGroup *group);
-char *g_supplicant_group_get_ip_mask(GSupplicantGroup *group);
-char *g_supplicant_group_get_go_ip_addr(GSupplicantGroup *group);
+unsigned int g_supplicant_network_get_keymgmt(GSupplicantNetwork *network);
 
 struct _GSupplicantCallbacks {
 	void (*system_ready) (void);
