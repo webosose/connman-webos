@@ -2484,8 +2484,7 @@ static void bss_compute_security(struct g_supplicant_bss *bss)
 	if (bss->keymgmt &
 			(G_SUPPLICANT_KEYMGMT_WPA_PSK |
 				G_SUPPLICANT_KEYMGMT_WPA_FT_PSK |
-				G_SUPPLICANT_KEYMGMT_WPA_PSK_256 |
-				G_SUPPLICANT_KEYMGMT_SAE))
+				G_SUPPLICANT_KEYMGMT_WPA_PSK_256))
 		bss->psk = TRUE;
 
 	if (bss->ieee8021x)
@@ -3088,6 +3087,12 @@ static GSupplicantInterface *interface_alloc(const char *path)
 	interface->group_table = g_hash_table_new_full(g_str_hash,
 					g_str_equal, NULL, remove_group);
 	interface->bss_mapping = g_hash_table_new_full(g_str_hash, g_str_equal,
+								NULL, NULL);
+
+	interface->p2p_peer_path_to_network = g_hash_table_new_full(g_str_hash, g_str_equal,
+								NULL, NULL);
+
+	interface->p2p_group_path_to_group = g_hash_table_new_full(g_str_hash, g_str_equal,
 								NULL, NULL);
 
 	g_hash_table_replace(interface_table, interface->path, interface);
@@ -5532,7 +5537,7 @@ static void extract_peer_with_ip(const char *path, DBusMessageIter *iter, connma
 
 static void signal_group_peer_joined(const char *path, DBusMessageIter *iter)
 {
-	const char *peer_path = NULL;
+	//const char *peer_path = NULL;
 	extract_peer_with_ip(path, iter, TRUE, false);
 }
 static gboolean peer_joined_with_ip(gpointer data)
@@ -8648,6 +8653,46 @@ static void interface_p2p_reject_params(DBusMessageIter *iter, void *user_data)
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
 							&data->peer->path);
 }
+
+int g_supplicant_interface_p2p_reject(GSupplicantInterface *interface,
+					GSupplicantPeerParams *peer_params,
+					GSupplicantInterfaceCallback callback,
+					void *user_data)
+{
+	struct interface_reject_data* data;
+	int ret;
+
+	SUPPLICANT_DBG("");
+
+	if (!interface || !peer_params || !peer_params->path)
+		return -EINVAL;
+
+	if (!interface->p2p_support)
+		return -ENOTSUP;
+
+	data = dbus_malloc0(sizeof(*data));
+	if (!data)
+		return -ENOMEM;
+
+	data->interface = interface;
+	data->path = g_strdup(interface->path);
+	data->peer = peer_params;
+	data->callback = callback;
+	data->user_data = user_data;
+
+	ret = supplicant_dbus_method_call(interface->path,
+			SUPPLICANT_INTERFACE ".Interface.P2PDevice", "RejectPeer",
+			interface_p2p_reject_params, interface_p2p_reject_peer_result, data, NULL);
+
+	if (ret < 0) {
+		g_free(data->path);
+		dbus_free(data);
+		return ret;
+	}
+
+	return -EINPROGRESS;
+}
+
 struct interface_p2p_sd_data {
 	GSupplicantInterface *interface;
 	GSupplicantInterfaceCallback callback;
@@ -8778,6 +8823,42 @@ static void interface_p2p_sd_cancel_request_params(DBusMessageIter *iter, void *
 		dbus_message_iter_append_basic(iter, DBUS_TYPE_UINT64, request_id);
 	}
 }
+
+int g_supplicant_interface_p2p_sd_cancel_request(GSupplicantInterface *interface,
+				dbus_uint64_t request_id,
+				GSupplicantInterfaceCallback callback,
+				void *user_data)
+{
+	struct interface_p2p_sd_data *data;
+	int ret;
+
+	if (interface == NULL)
+		return -EINVAL;
+
+	if (system_available == FALSE)
+		return -EFAULT;
+
+	data = dbus_malloc0(sizeof(*data));
+	if (data == NULL)
+		return -ENOMEM;
+
+	data->interface = interface;
+	data->callback = callback;
+	data->user_data = user_data;
+	data->p2p_sd_params = (void*)&request_id;
+
+	ret = supplicant_dbus_method_call(interface->path,
+									  SUPPLICANT_INTERFACE ".Interface.P2PDevice", "ServiceDiscoveryCancelRequest",
+									  interface_p2p_sd_cancel_request_params, interface_p2p_sd_cancel_request_result, data, NULL);
+
+	if (ret < 0) {
+		dbus_free(data);
+		return ret;
+	}
+
+	return -EINPROGRESS;
+}
+
 struct p2p_service_data {
 	bool registration;
 	GSupplicantInterface *interface;
@@ -9945,6 +10026,12 @@ int g_supplicant_register(const GSupplicantCallbacks *callbacks)
 								NULL, NULL);
 	config_file_table = g_hash_table_new_full(g_str_hash, g_str_equal,
 								g_free, g_free);
+	intf_addr_mapping = g_hash_table_new_full(g_str_hash, g_str_equal,
+								g_free, NULL);
+	dev_addr_mapping = g_hash_table_new_full(g_str_hash, g_str_equal,
+								g_free, g_free);
+	p2p_peer_table = g_hash_table_new_full(g_str_hash, g_str_equal,
+								g_free, NULL);
 
 	supplicant_dbus_setup(connection);
 
@@ -10046,6 +10133,15 @@ void g_supplicant_unregister(const GSupplicantCallbacks *callbacks)
 	if (connection) {
 		dbus_connection_unref(connection);
 		connection = NULL;
+	}
+
+	if (intf_addr_mapping){
+		g_hash_table_destroy(intf_addr_mapping);
+		intf_addr_mapping = NULL;
+	}
+	if (p2p_peer_table != NULL){
+		g_hash_table_destroy(p2p_peer_table);
+		p2p_peer_table = NULL;
 	}
 
 	callbacks_pointer = NULL;
