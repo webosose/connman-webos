@@ -358,13 +358,6 @@ void __connman_sd_init(GSupplicantInterface *interface, const char* dev_ident)
 	res = g_dbus_register_interface(connection, CONNMAN_SD_PATH, CONNMAN_SD_INTERFACE,
 									sd_methods, sd_signals,
 									NULL, NULL, NULL);
-
-	if(res == FALSE) {
-		g_free(sd);
-		sd = NULL;
-		return;
-	}
-
 	sd->interface = interface;
 	sd->peer_service_prefix = g_strdup_printf("wifi_%s", dev_ident);
 }
