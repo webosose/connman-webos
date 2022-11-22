@@ -94,6 +94,7 @@ static struct {
 	bool allow_hostname_updates;
 	bool allow_domainname_updates;
 	bool single_tech;
+	char *wpas_config_file;
 	char **tethering_technologies;
 	bool persistent_tethering_mode;
 	bool enable_6to4;
@@ -121,6 +122,7 @@ static struct {
 	.allow_hostname_updates = true,
 	.allow_domainname_updates = true,
 	.single_tech = false,
+	.wpas_config_file = NULL,
 	.tethering_technologies = NULL,
 	.persistent_tethering_mode = false,
 	.enable_6to4 = false,
@@ -149,6 +151,7 @@ static struct {
 #define CONF_ALLOW_HOSTNAME_UPDATES     "AllowHostnameUpdates"
 #define CONF_ALLOW_DOMAINNAME_UPDATES   "AllowDomainnameUpdates"
 #define CONF_SINGLE_TECH                "SingleConnectedTechnology"
+#define CONF_WPA_SUPPLICANT_CONF_FILE   "WpaSupplicantConfigFile"
 #define CONF_TETHERING_TECHNOLOGIES      "TetheringTechnologies"
 #define CONF_PERSISTENT_TETHERING_MODE  "PersistentTetheringMode"
 #define CONF_ENABLE_6TO4                "Enable6to4"
@@ -177,6 +180,7 @@ static const char *supported_options[] = {
 	CONF_ALLOW_HOSTNAME_UPDATES,
 	CONF_ALLOW_DOMAINNAME_UPDATES,
 	CONF_SINGLE_TECH,
+	CONF_WPA_SUPPLICANT_CONF_FILE,
 	CONF_TETHERING_TECHNOLOGIES,
 	CONF_PERSISTENT_TETHERING_MODE,
 	CONF_ENABLE_6TO4,
@@ -311,6 +315,7 @@ static void parse_config(GKeyFile *config)
 	char **timeservers;
 	char **interfaces;
 	char **str_list;
+	char *wpas_config_file;
 	char **tethering;
 	char *string;
 	gsize len;
@@ -448,6 +453,13 @@ static void parse_config(GKeyFile *config)
 			CONF_SINGLE_TECH, &error);
 	if (!error)
 		connman_settings.single_tech = boolean;
+
+	g_clear_error(&error);
+
+	wpas_config_file = g_key_file_get_string(config, "General",CONF_WPA_SUPPLICANT_CONF_FILE, &error);
+
+	if (!error)
+		connman_settings.wpas_config_file = wpas_config_file;
 
 	g_clear_error(&error);
 
@@ -755,6 +767,9 @@ char *connman_setting_get_string(const char *key)
 			return option_wifi;
 	}
 
+	if (g_str_equal(key, CONF_WPA_SUPPLICANT_CONF_FILE))
+		return connman_settings.wpas_config_file;
+
 	return NULL;
 }
 
@@ -1046,6 +1061,7 @@ int main(int argc, char *argv[])
 	g_free(connman_settings.vendor_class_id);
 	g_free(connman_settings.online_check_ipv4_url);
 	g_free(connman_settings.online_check_ipv6_url);
+        g_free(connman_settings.wpas_config_file);
 
 	g_free(option_debug);
 	g_free(option_wifi);
