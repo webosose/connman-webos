@@ -570,6 +570,20 @@ static void unset_default_gateway(struct gateway_data *data,
 						data->ipv4_gateway->gateway);
 }
 
+char *find_service_gateway(struct connman_service *service)
+{
+	DBG("find_service_gateway");
+	if (!service)
+		return NULL;
+	struct gateway_data *service_gateway;
+
+	service_gateway = g_hash_table_lookup(gateway_hash, service);
+
+	if((service_gateway) && (service_gateway->ipv4_gateway) && (service_gateway->ipv4_gateway->gateway))
+			return service_gateway->ipv4_gateway->gateway;
+	return NULL;
+}
+
 static struct gateway_data *find_default_gateway(void)
 {
 	struct connman_service *service;
