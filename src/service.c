@@ -158,6 +158,7 @@ static struct connman_ipconfig *create_ip6config(struct connman_service *service
 		int index);
 static void dns_changed(struct connman_service *service);
 static void vpn_auto_connect(void);
+static void append_bsses(DBusMessageIter *iter, void *user_data);
 
 struct find_data {
 	const char *path;
@@ -1696,6 +1697,13 @@ static void strength_changed(struct connman_service *service)
 	connman_dbus_property_changed_basic(service->path,
 				CONNMAN_SERVICE_INTERFACE, "Strength",
 					DBUS_TYPE_BYTE, &service->strength);
+
+	if (service->network)
+	{
+		connman_dbus_property_changed_array(service->path,
+					CONNMAN_SERVICE_INTERFACE, "BSS", DBUS_TYPE_DICT_ENTRY,
+					append_bsses, connman_network_get_bss_table(service->network));
+	}
 }
 
 static void favorite_changed(struct connman_service *service)
@@ -2552,6 +2560,57 @@ int connman_service_iterate_services(connman_service_iterate_cb cb,
 	return ret;
 }
 
+static void append_bss(DBusMessageIter *iter, void *key, void *value)
+{
+	char *bss_id = key;
+	struct connman_bss *bss_props = value;
+	DBusMessageIter item;
+	int signal = 0;
+	int frequency = 0;
+
+	connman_dbus_dict_open(iter, &item);
+
+	if (!bss_id || !bss_props)
+		goto empty_dict;
+
+	signal = connman_network_get_bss_signal(bss_props);
+	frequency = connman_network_get_bss_frequency(bss_props);
+
+	connman_dbus_dict_append_basic(&item, "Id",
+						DBUS_TYPE_STRING, &bss_id);
+
+	connman_dbus_dict_append_basic(&item, "Signal",
+						DBUS_TYPE_INT32, &signal);
+
+	connman_dbus_dict_append_basic(&item, "Frequency",
+						DBUS_TYPE_INT32, &frequency);
+
+empty_dict:
+	connman_dbus_dict_close(iter, &item);
+}
+
+static void append_bsses(DBusMessageIter *iter, void *user_data)
+{
+	GHashTable *bsses = user_data;
+	GHashTableIter hash;
+	gpointer key, value;
+
+	if (!bsses) {
+		// Empty array when no BSSes.
+		return;
+	}
+
+	g_hash_table_iter_init(&hash, bsses);
+
+	while (g_hash_table_iter_next(&hash, &key, &value)) {
+		DBusMessageIter dict;
+
+		dbus_message_iter_open_container(iter, DBUS_TYPE_STRUCT, NULL, &dict);
+		append_bss(&dict, key, value);
+		dbus_message_iter_close_container(iter, &dict);
+	}
+}
+
 static void append_properties(DBusMessageIter *dict, dbus_bool_t limited,
 					struct connman_service *service)
 {
@@ -2617,9 +2676,21 @@ static void append_properties(DBusMessageIter *dict, dbus_bool_t limited,
 						append_ethernet, service);
 		break;
 	case CONNMAN_SERVICE_TYPE_WIFI:
-	case CONNMAN_SERVICE_TYPE_ETHERNET:
+		if (service->network) {
+			connman_dbus_dict_append_array(dict, "BSS",
+											DBUS_TYPE_DICT_ENTRY,
+											append_bsses,
+											connman_network_get_bss_table(service->network));
+		}
 	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+		if (service->network) {
+			str = connman_network_get_address(service->network);
+			if (str)
+				connman_dbus_dict_append_basic(dict, "Address",
+												DBUS_TYPE_STRING, &str);
+		}
 	case CONNMAN_SERVICE_TYPE_GADGET:
+	case CONNMAN_SERVICE_TYPE_ETHERNET:
 		connman_dbus_dict_append_dict(dict, "Ethernet",
 						append_ethernet, service);
 		break;
