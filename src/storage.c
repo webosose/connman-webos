@@ -65,12 +65,16 @@ static int storage_save(GKeyFile *keyfile, char *pathname)
 
 	data = g_key_file_to_data(keyfile, &length, NULL);
 
+	if (!data) {
+		goto error;
+	}
+
 	if (!g_file_set_contents(pathname, data, length, &error)) {
 		DBG("Failed to store information: %s", error->message);
 		g_error_free(error);
 		ret = -EIO;
 	}
-
+	error:
 	g_free(data);
 
 	return ret;
