@@ -793,24 +793,28 @@ static DBusMessage *connect_peer(DBusConnection *conn,
 	if (peer->pending)
 		return __connman_error_in_progress(msg);
 
-	list = g_hash_table_get_values(peers_table);
-	start = list;
-	for (; list; list = list->next) {
-		struct connman_peer *temp = list->data;
+	// Dont disconnect if already group is present,
+	// required to support connection with multiple Peers
+	if (!__connman_group_exist()) {
+		list = g_hash_table_get_values(peers_table);
+		start = list;
+		for (; list; list = list->next) {
+			struct connman_peer *temp = list->data;
 
-		if (temp == peer || temp->device != peer->device)
-			continue;
+			if (temp == peer || temp->device != peer->device)
+				continue;
 
-		if (is_connecting(temp) || is_connected(temp)) {
-			if (peer_disconnect(temp) == -EINPROGRESS) {
-				g_list_free(start);
-				return __connman_error_in_progress(msg);
+			if (is_connecting(temp) || is_connected(temp)) {
+				if (peer_disconnect(temp) == -EINPROGRESS) {
+					g_list_free(start);
+					return __connman_error_in_progress(msg);
+				}
 			}
 		}
+
+		g_list_free(start);
 	}
-
-	g_list_free(start);
-
+ 
 	peer->pending = dbus_message_ref(msg);
 
 	err = peer_connect(peer);
