@@ -793,19 +793,18 @@ static bool wispr_portal_web_result(GWebResult *result, gpointer user_data)
 	case 200:
 		if (wp_context->wispr_msg.message_type >= 0)
 			break;
-
-		if (g_web_result_get_header(result, "X-ConnMan-Status",
-						&str)) {
+		//header authentication not required
+		//if (g_web_result_get_header(result, "X-ConnMan-Status",
+		//				&str)) {
 			portal_manage_status(result, wp_context);
 			//wispr_portal_context_unref(wp_context);
 			return false;
-		} else {
+		/*} else {
 			//wispr_portal_context_ref(wp_context);
 			__connman_agent_request_browser(wp_context->service,
 					wispr_portal_browser_reply_cb,
 					wp_context->redirect_url, wp_context);
-		}
-
+		}*/
 		break;
 	case 300:
 	case 301:
