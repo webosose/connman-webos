@@ -67,6 +67,13 @@ void __connman_group_client_dhcp_ip_assigned(struct connman_group *group);
 void __connman_group_init(void);
 void __connman_group_cleanup(void);
 
+void __connman_p2p_go_tethering_set_enabled(void);
+void __connman_p2p_set_dhcp_pool(void *pool);
+void __connman_p2p_go_tethering_set_disabled(void);
+void __connman_dhcpserver_append_gateway(void *dict);
+void __connman_p2p_go_set_bridge(char *bridge);
+int __connman_p2p_go_set_enabled(void);
+void __connman_p2p_go_set_disabled(void);
 #ifdef __cplusplus
 }
 #endif

@@ -2,7 +2,7 @@
  *
  *  WPA supplicant library with GLib integration
  *
- *  Copyright (C) 2012-2013  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2012-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -39,6 +39,7 @@
 
 #include "dbus.h"
 #include "gsupplicant.h"
+#include <src/connman.h>
 
 #define IEEE80211_CAP_ESS	0x0001
 #define IEEE80211_CAP_IBSS	0x0002
@@ -924,8 +925,8 @@ static void callback_p2p_prov_disc_fail(GSupplicantInterface *interface,
 
 	if (!callbacks_pointer->p2p_prov_disc_fail)
 		return;
-
-	callbacks_pointer->p2p_prov_disc_fail(interface, peer, pin);
+	int status = atoi(pin);
+	callbacks_pointer->p2p_prov_disc_fail(interface, peer, status);
 }
 
 GSupplicantInterface *g_supplicant_group_get_interface(GSupplicantGroup *group)
@@ -3848,7 +3849,7 @@ static void peer_property(const char *key, DBusMessageIter *iter,
 			}
 
 			p2p_pending_invitation_fire_signals(peer);
-			peer->found_pending_signal_timeout_ref = g_timeout_add(500, p2p_network_fire_signals, peer);
+			peer->found_pending_signal_timeout_ref = g_timeout_add(500, (GSourceFunc) p2p_network_fire_signals, peer);
 
 			dbus_free(data);
 		}
@@ -4198,7 +4199,7 @@ static void group_sig_property(const char *key, DBusMessageIter *iter,
 			dbus_message_iter_recurse(iter, &array);
 			dbus_message_iter_get_fixed_array(&array, &ip_addr, &addr_len);
 
-			data->ip_addr = __connman_util_ipaddr_binary_to_string(ip_addr);
+			data->ip_addr = (char *)__connman_util_ipaddr_binary_to_string(ip_addr);
 			SUPPLICANT_DBG("ip_addr : %s\n", data->ip_addr);
 	} else if(g_str_equal(key, "IpAddrMask")) {
 			DBusMessageIter array;
@@ -4206,7 +4207,7 @@ static void group_sig_property(const char *key, DBusMessageIter *iter,
 			dbus_message_iter_recurse(iter, &array);
 			dbus_message_iter_get_fixed_array(&array, &ip_mask, &addr_len);
 
-			data->ip_mask = __connman_util_ipaddr_binary_to_string(ip_mask);
+			data->ip_mask = (char *)__connman_util_ipaddr_binary_to_string(ip_mask);
 			SUPPLICANT_DBG("ip_mask : %s\n", data->ip_mask);
 	} else if(g_str_equal(key, "IpAddrGo")) {
 			DBusMessageIter array;
@@ -4214,7 +4215,7 @@ static void group_sig_property(const char *key, DBusMessageIter *iter,
 			dbus_message_iter_recurse(iter, &array);
 			dbus_message_iter_get_fixed_array(&array, &go_ip_addr, &addr_len);
 
-			data->go_ip_addr = __connman_util_ipaddr_binary_to_string(go_ip_addr);
+			data->go_ip_addr = (char *)__connman_util_ipaddr_binary_to_string(go_ip_addr);
 			SUPPLICANT_DBG("go_ip_addr : %s\n", data->go_ip_addr);
 	} else if(g_str_equal(key, "freq")) {
 			dbus_message_iter_get_basic(iter, &data->freq);
@@ -4709,7 +4710,7 @@ static gboolean add_pending_invitation_for_peer(gpointer argv)
 
 		signal->callback_params = (void *)inv_recv;
 		signal->free_function = g_free;
-		signal->dispatch_function = callback_p2p_pending_invitation_received;
+		signal->dispatch_function = (g_supplicant_p2p_network_signal_func) callback_p2p_pending_invitation_received;
 		peer->pending_invitation_signals = g_slist_append(peer->pending_invitation_signals, signal);
 
 		SUPPLICANT_DBG("Added signal to list");
@@ -4996,13 +4997,13 @@ static void interface_p2p_prov_disc_request_or_response(DBusMessageIter *iter,
 		else if (g_str_equal(wps_method, "enter_pin"))
 			callback_method = callback_p2p_prov_disc_requested_enter_pin;
 		else if (g_str_equal(wps_method, "disp_pin"))
-			callback_method = callback_p2p_prov_disc_requested_display_pin;
+			callback_method = (g_supplicant_p2p_prov_dics_signal_func) callback_p2p_prov_disc_requested_display_pin;
 	}
 	else {
 		if (g_str_equal(wps_method, "enter_pin"))
 			callback_method = callback_p2p_prov_disc_response_enter_pin;
 		else if (g_str_equal(wps_method, "disp_pin"))
-			callback_method = callback_p2p_prov_disc_response_display_pin;
+			callback_method = (g_supplicant_p2p_prov_dics_signal_func)callback_p2p_prov_disc_response_display_pin;
 	}
 
 	if (callback_method)
@@ -5010,7 +5011,7 @@ static void interface_p2p_prov_disc_request_or_response(DBusMessageIter *iter,
 		pin = g_strdup(pin);
 		fire_p2p_signal_when_network_present(interface,
 		                                     path,
-		                                     callback_method,
+		                                     (g_supplicant_p2p_network_signal_func) callback_method,
 		                                     g_free,
 		                                     (void *)pin);
 	}
@@ -5099,7 +5100,7 @@ static void interface_p2p_prov_disc_fail(DBusMessageIter *iter, void *user_data)
 	if (!peer)
 		return;
 
-	callback_p2p_prov_disc_fail(interface, peer, status);
+	callback_p2p_prov_disc_fail(interface, peer, (char *)status);
 }
 static void signal_prov_disc_fail(const char *path, DBusMessageIter *iter)
 {
@@ -5770,7 +5771,7 @@ GSupplicantP2PNetwork* g_supplicant_find_network_from_intf_address(const char* p
 		p2p_network = NULL;
 	}
 
-	return p2p_network;
+	return (GSupplicantP2PNetwork* ) p2p_network;
 }
 
 /* @pintf_addr: interface mac address in the form of 0012233445a */
@@ -5788,7 +5789,7 @@ const char * g_supplicant_peer_identifier_from_intf_address(const char* pintf_ad
 
 	p2p_dev_addr = g_hash_table_lookup(dev_addr_mapping, pintf_addr);
 	if(!p2p_dev_addr)
-		return peer;
+		return (char *) peer;
 
 	string_to_byte(p2p_dev_addr, p2p_dev_addr_byte);
 	string_to_byte(pintf_addr, intf_addr_byte);
@@ -5814,11 +5815,11 @@ const char * g_supplicant_peer_identifier_from_intf_address(const char* pintf_ad
 	}
 
 	if(p2p_network == NULL)
-		return peer;
+		return (char *) peer;
 
 	interface = g_hash_table_lookup(peer_mapping, p2p_network->path);
 	if (!interface)
-		return peer;
+		return (char *) peer;
 
 	peer = g_hash_table_lookup(interface->peer_table, p2p_network->path);
 
@@ -5861,7 +5862,7 @@ static void signal_group_peer_disconnected(const char *path, DBusMessageIter *it
 	if (pintf_addr == NULL)
 		return;
 
-	p2p_network = g_supplicant_find_network_from_intf_address(pintf_addr, p2p_dev_addr);
+	p2p_network = (struct peer_device_data *) g_supplicant_find_network_from_intf_address(pintf_addr, p2p_dev_addr);
 
 	if (p2p_network == NULL)
 		return;

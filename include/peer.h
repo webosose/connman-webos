@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2014  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -101,6 +101,15 @@ void connman_peer_get_local_address(gpointer user_data, DBusMessageIter *iter);
 
 void __connman_peer_get_properties_struct(DBusMessageIter *iter, gpointer user_data);
 
+void connman_peer_set_strength(struct connman_peer *peer, unsigned char strength);
+
+void connman_peer_set_config_methods(struct connman_peer *peer, dbus_uint16_t config_methods);
+
+void connman_peer_set_pri_dev_type(struct connman_peer *peer, const char* pri_dev_type);
+
+typedef void (*GdhcpaddressclientCb) ();
+void connman_peer_dhcpclient_cb(struct connman_peer *peer,GdhcpaddressclientCb callback);
+
 typedef void (* peer_service_registration_cb_t) (int result, void *user_data);
 
 struct connman_peer_driver {
@@ -126,6 +135,8 @@ void connman_peer_driver_unregister(struct connman_peer_driver *driver);
 
 bool connman_peer_service_is_master(void);
 const char *connman_peer_wps_method2string(enum connman_peer_wps_method method);
+
+struct connman_peer *__connman_get_connected_peer(void);
 
 #ifdef __cplusplus
 }

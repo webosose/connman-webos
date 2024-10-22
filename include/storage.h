@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2012  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -30,6 +30,7 @@ extern "C" {
 
 gchar **connman_storage_get_services();
 GKeyFile *connman_storage_load_service(const char *service_id);
+int __connman_storage_get_p2p_persistents_count(void);
 
 #ifdef __cplusplus
 }

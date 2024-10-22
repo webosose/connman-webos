@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2014  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -32,6 +32,8 @@
 #include <connman/agent.h>
 
 #include "connman.h"
+
+#include "connman/group.h"
 
 #define P2P_DEFAULT_BLOCK 0xc0a83100 //192.168.49.
 

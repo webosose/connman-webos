@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2007-2012  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2007-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -293,7 +293,7 @@ static void gadget_tech_disable_tethering(struct connman_technology *technology,
 	}
 }
 
-static int gadget_tech_set_tethering(struct connman_technology *technology,
+static int gadget_tech_set_tethering(struct connman_technology *technology, const char *identifier, const char *passphrase,
 				const char *bridge, bool enabled)
 {
 	DBG("bridge %s enabled %d", bridge, enabled);

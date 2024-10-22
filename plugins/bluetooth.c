@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2013  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -882,6 +882,7 @@ static void bluetooth_tech_remove(struct connman_technology *technology)
 }
 
 static int bluetooth_tech_set_tethering(struct connman_technology *technology,
+        const char *identifier, const char *passphrase,
 		const char *bridge, bool enabled)
 {
 	GHashTableIter hash_iter;

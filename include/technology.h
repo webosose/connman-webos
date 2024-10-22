@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2007-2013  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2007-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -71,6 +71,12 @@ void connman_technology_set_p2p_listen_channel(struct connman_technology *techno
 void connman_technology_wps_failed_notify(struct connman_technology *technology);
 bool connman_technology_get_p2p_persistent(struct connman_technology *technology);
 void connman_technology_set_p2p_persistent(struct connman_technology *technology, bool enabled);
+
+int connman_technology_tethering_add_station(enum connman_service_type type, const char *mac);
+
+void __connman_technology_sta_count_changed(enum connman_service_type type, int stacount);
+
+int connman_technology_tethering_remove_station(const char *mac);
 
 struct connman_technology_driver {
 	const char *name;

@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2007-2014  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2007-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -1139,3 +1139,9 @@ void __connman_util_cleanup(void);
 char *__connman_util_insert_colon_to_mac_addr(const char *mac_addr);
 char *__connman_util_mac_binary_to_string_no_colon(const unsigned char binmac[6]);
 const char * g_supplicant_peer_identifier_from_intf_address(const char* pintf_addr);
+
+void __connman_util_byte_to_string(unsigned char *src, char *dest, int len);
+char *__connman_util_ipaddr_binary_to_string(const unsigned char* ip_addr);
+char *__connman_util_remove_colon_from_mac_addr(const char *mac_addr);
+char *__connman_util_mac_binary_to_string_no_colon(const unsigned char binmac[6]);
+

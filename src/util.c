@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2014  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -23,6 +23,7 @@
 #include <config.h>
 #endif
 
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -32,6 +33,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include <ctype.h>
 #include "connman.h"
 
 #define URANDOM "/dev/urandom"

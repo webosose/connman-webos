@@ -2,7 +2,7 @@
  *
  *  Connection Manager
  *
- *  Copyright (C) 2007-2014  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2007-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -35,6 +35,8 @@
 
 #include <connman/types.h>
 
+#include "connman/device.h"
+
 #ifndef IFF_LOWER_UP
 #define IFF_LOWER_UP	0x10000
 #endif
@@ -58,6 +60,7 @@
 #include <connman/utsname.h>
 #include <connman/machine.h>
 #include <connman/tethering.h>
+#include <connman/sd.h>
 
 #include <gsupplicant/gsupplicant.h>
 
@@ -638,7 +641,7 @@ static void remove_persistent_groups_elements(GSupplicantP2PPersistentGroup *pg)
 
 static void free_persistent_groups(gpointer data)
 {
-	struct GSupplicantP2PPersistentGroup *pg = data;
+	GSupplicantP2PPersistentGroup *pg = data;
 
 	if (pg != NULL)
 		remove_persistent_groups_elements(pg);
@@ -1407,7 +1410,7 @@ static void register_wfd_service_cb(int result,
 	DBG("");
 
 	if (result == 0)
-		g_list_foreach(iface_list, apply_p2p_listen_on_iface, NULL);
+		g_list_foreach(iface_list, (GFunc) apply_p2p_listen_on_iface, NULL);
 
 	if (reg_data && reg_data->callback) {
 		reg_data->callback(result, reg_data->user_data);
@@ -4180,7 +4183,7 @@ static void interface_removed(GSupplicantInterface *interface)
 	int err;
 
 	DBG("ifname %s", ifname);
-	GSList *list;
+	GList *list;
 
 	for (list = iface_list; list; list = list->next) {
 		wifi = list->data;
@@ -5173,7 +5176,7 @@ static void p2p_persistent_info_remove_oldest(const char *identifier, struct wif
 	GList *connected_p2p_list = NULL;
 	char persistent_info_name[28] = "p2p_persistent_";
 
-	connected_p2p_list = __connman_service_connected_peer_list(wifi);
+	connected_p2p_list = (GList *) __connman_service_connected_peer_list(wifi);
 
 	oldest_identifier = p2p_persistent_info_find_oldest(identifier, connected_p2p_list, wifi);
 
@@ -5186,7 +5189,7 @@ static void p2p_persistent_info_remove_oldest(const char *identifier, struct wif
 	__connman_storage_remove_service(persistent_info_name);
 
 	g_free(oldest_identifier);
-	g_slist_free(connected_p2p_list);
+	g_list_free(connected_p2p_list);
 }
 static void p2p_persistent_info_save(const char *identifier, GSupplicantP2PPersistentGroup *persistent_group)
 {

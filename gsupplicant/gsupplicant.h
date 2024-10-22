@@ -2,7 +2,7 @@
  *
  *  WPA supplicant library with GLib integration
  *
- *  Copyright (C) 2012-2013  Intel Corporation. All rights reserved.
+ *  Copyright (C) 2012-2024  Intel Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -470,6 +470,9 @@ int g_supplicant_interface_p2p_wps_start(GSupplicantInterface *interface,
 													void *user_data);
 
 int g_supplicant_interface_p2p_remove_all_persistent_groups(GSupplicantInterface *interface);
+
+int g_supplicant_interface_p2p_remove_persistent_group(GSupplicantInterface *interface, void *user_data);
+
 int g_supplicant_interface_p2p_add_persistent_group(GSupplicantInterface *interface,
 										GSupplicantSSID *ssid, void *user_data);
 
@@ -601,6 +604,8 @@ typedef struct _GSupplicantP2PNetwork GSupplicantP2PNetwork;
 typedef struct _GSupplicantNetwork GSupplicantNetwork;
 typedef struct _GSupplicantGroup GSupplicantGroup;
 
+void g_supplicant_interface_set_p2p_persistent_group(GSupplicantInterface *interface, GSupplicantGroup *group, GSupplicantP2PPersistentGroup *persistent_group);
+
 GSupplicantInterface *g_supplicant_network_get_interface(GSupplicantNetwork *network);
 const char *g_supplicant_network_get_name(GSupplicantNetwork *network);
 const char *g_supplicant_network_get_identifier(GSupplicantNetwork *network);
@@ -724,7 +729,7 @@ struct _GSupplicantCallbacks {
 	void (*p2p_prov_disc_fail) (GSupplicantInterface *interface, GSupplicantPeer *peer, int status);
 
 	void (*p2p_invitation_result)(GSupplicantInterface *interface, int status);
-	void (*p2p_invitation_received) (GSupplicantInterface *interface, GSupplicantP2PNetwork *p2p_network, const char *go_dev_addr, connman_bool_t persistent);
+	void (*p2p_invitation_received) (GSupplicantInterface *interface, GSupplicantPeer *p2p_network, const char *go_dev_addr, bool persistent);
 };
 
 typedef struct _GSupplicantCallbacks GSupplicantCallbacks;
