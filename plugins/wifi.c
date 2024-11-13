@@ -4986,6 +4986,12 @@ static void peer_found(GSupplicantPeer *peer)
 
 	DBG("ident: %s", identifier);
 
+	if(wifi == NULL)
+	{
+		DBG("Wi-Fi is null");
+		return;
+	}
+
 	connman_network = connman_device_get_network(wifi->device, identifier);
 
 	if (connman_network == NULL) {
