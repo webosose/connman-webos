@@ -30,8 +30,7 @@
 
 #include "connman.h"
 
-#define STATUS_URL_IPV4  "http://ipv4.connman.net/online/status.html"
-#define STATUS_URL_IPV6  "http://ipv6.connman.net/online/status.html"
+
 
 struct connman_wispr_message {
 	bool has_error;
@@ -971,10 +970,10 @@ static int wispr_portal_detect(struct connman_wispr_portal_context *wp_context)
 
 	if (wp_context->type == CONNMAN_IPCONFIG_TYPE_IPV4) {
 		g_web_set_address_family(wp_context->web, AF_INET);
-		wp_context->status_url = STATUS_URL_IPV4;
+		wp_context->status_url = online_check_ipv4_url;
 	} else {
 		g_web_set_address_family(wp_context->web, AF_INET6);
-		wp_context->status_url = STATUS_URL_IPV6;
+		wp_context->status_url = online_check_ipv6_url;
 	}
 
 	for (i = 0; nameservers[i]; i++)
@@ -1098,12 +1097,12 @@ int __connman_wispr_init(void)
 						g_direct_equal, NULL,
 						free_connman_wispr_portal);
 
-	/*online_check_ipv4_url =
+	online_check_ipv4_url =
 		connman_setting_get_string("OnlineCheckIPv4URL");
 	online_check_ipv6_url =
 		connman_setting_get_string("OnlineCheckIPv6URL");
 
-	enable_online_to_ready_transition =
+	/*enable_online_to_ready_transition =
 		connman_setting_get_bool("EnableOnlineToReadyTransition");*/
 
 	return 0;
